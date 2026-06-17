@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Park Place IM — Coverage Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F1F1EE;
+    --surface: #FFFFFF;
+    --ink: #1F2937;
+    --ink-soft: #4B5563;
+    --ink-mute: #6B7280;
+    --line: #E5E7EB;
+    --line-soft: #F3F4F6;
+    --header: #2C3E50;
+    --accent: #3B5A82;
+    --ok: #047857;
+    --ok-bg: #D1FAE5;
+    --warn: #B45309;
+    --warn-bg: #FEF3C7;
+    --plan-b: #6D28D9;
+    --plan-b-bg: #EDE9FE;
+    --plan-c: #B91C1C;
+    --plan-c-bg: #FEE2E2;
+    --out: #6B7280;
+    --out-bg: #F3F4F6;
+    --t1: #2563EB; --t1-soft: #DBEAFE;
+    --t2: #059669; --t2-soft: #D1FAE5;
+    --t3: #6D28D9; --t3-soft: #EDE9FE;
+    --t4: #C2410C; --t4-soft: #FED7AA;
+    --t5: #B45309; --t5-soft: #FEF3C7;
+    --t6: #BE185D; --t6-soft: #FCE7F3;
+    --t7: #0F766E; --t7-soft: #CCFBF1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  /* TOP BAR */
+  .top-bar {
+    background: var(--surface);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .brand {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--header);
+    margin-right: 8px;
+  }
+  .date-nav { display: flex; align-items: center; gap: 6px; }
+  .date-btn {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-soft);
+    font-size: 1rem;
+  }
+  .date-btn:hover { background: var(--line-soft); }
+  .date-input {
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--ink);
+    background: var(--surface);
+  }
+  .today-btn, .reset-btn, .absences-btn, .export-btn {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+  .today-btn:hover, .reset-btn:hover, .absences-btn:hover, .export-btn:hover { background: var(--line-soft); }
+  .absences-btn { position: relative; }
+  .absence-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: var(--accent);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .date-label {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    margin-left: 4px;
+  }
+  .view-toggle {
+    display: flex;
+    background: var(--line-soft);
+    border-radius: 6px;
+    padding: 2px;
+    margin-left: auto;
+  }
+  .view-toggle button {
+    background: transparent;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+  .view-toggle button.active {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  /* BANNER */
+  .summary-banner {
+    background: var(--header);
+    color: white;
+    padding: 18px 28px;
+  }
+  .banner-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+  .banner-subtitle {
+    font-size: 0.82rem;
+    opacity: 0.7;
+    margin-top: 4px;
+  }
+  .banner-stats {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .stat-pill {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stat-pill .value { font-weight: 700; font-size: 0.95rem; }
+  .stat-pill .label { opacity: 0.75; }
+  /* PLAN C ALERT */
+  .plan-c-alert {
+    background: var(--plan-c-bg);
+    border-left: 4px solid var(--plan-c);
+    margin: 14px 24px 0;
+    padding: 14px 18px;
+    border-radius: 4px;
+  }
+  .plan-c-alert .title {
+    color: var(--plan-c);
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .plan-c-alert .body {
+    color: var(--ink);
+    font-size: 0.92rem;
+  }
+  .plan-c-rows {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .plan-c-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .plan-c-team-name {
+    font-weight: 600;
+    min-width: 120px;
+    color: var(--plan-c);
+  }
+  .plan-c-team-block {
+    border-top: 1px solid rgba(185, 28, 28, 0.18);
+    padding-top: 8px;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .plan-c-team-block:first-child {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+  }
+  .plan-c-team-heading {
+    font-weight: 700;
+    color: var(--plan-c);
+    font-size: 0.95rem;
+    margin-bottom: 2px;
+  }
+  .plan-c-select {
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    background: var(--surface);
+    color: var(--ink);
+    min-width: 240px;
+  }
+  /* TEAM GRID */
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+    padding: 18px 24px;
+  }
+  .team-card {
+    background: var(--surface);
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .team-band {
+    padding: 10px 14px;
+    color: white;
+    font-weight: 600;
+    font-size: 0.95rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .team-t1 .team-band { background: var(--t1); }
+  .team-t2 .team-band { background: var(--t2); }
+  .team-t3 .team-band { background: var(--t3); }
+  .team-t4 .team-band { background: var(--t4); }
+  .team-t5 .team-band { background: var(--t5); }
+  .team-t6 .team-band { background: var(--t6); }
+  .team-t7 .team-band { background: var(--t7); }
+  .team-status-chip {
+    background: rgba(255,255,255,0.22);
+    padding: 3px 9px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .members { padding: 10px 0; }
+  .member-row {
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .member-row:last-child { border-bottom: none; }
+  .toggle {
+    background: none;
+    border: 1px solid var(--line);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--ok);
+    font-weight: 700;
+    font-size: 0.7rem;
+  }
+  .toggle.in { background: var(--ok-bg); border-color: var(--ok); }
+  .toggle.out { background: var(--out-bg); border-color: var(--line); color: transparent; }
+  .member-info { flex: 1; min-width: 0; }
+  .member-name {
+    font-weight: 500;
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+  .member-name.out { color: var(--ink-mute); text-decoration: line-through; }
+  .member-role {
+    font-size: 0.72rem;
+    color: var(--ink-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .coverage-chip {
+    background: var(--ok-bg);
+    color: var(--ok);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .coverage-chip.plan-b { background: var(--plan-b-bg); color: var(--plan-b); }
+  .coverage-chip.plan-c { background: var(--plan-c-bg); color: var(--plan-c); }
+  .scheduled-tag {
+    background: var(--warn-bg);
+    color: var(--warn);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    margin-left: 6px;
+    white-space: nowrap;
+  }
+  .ooo-line {
+    margin-top: 4px;
+  }
+  .ooo-line .scheduled-tag {
+    margin-left: 0;
+    display: inline-block;
+  }
+  /* WEEK VIEW */
+  .weekly-view {
+    background: var(--surface);
+    margin: 18px 24px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .weekly-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .weekly-table th, .weekly-table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .weekly-table th {
+    background: var(--line-soft);
+    font-weight: 600;
+    color: var(--ink-soft);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .weekly-table .team-label {
+    font-weight: 700;
+    color: white;
+    white-space: nowrap;
+    text-align: center;
+    font-size: 0.85rem;
+  }
+  .weekly-table tr.team-t1 .team-label { background: var(--t1); }
+  .weekly-table tr.team-t2 .team-label { background: var(--t2); }
+  .weekly-table tr.team-t3 .team-label { background: var(--t3); }
+  .weekly-table tr.team-t4 .team-label { background: var(--t4); }
+  .weekly-table tr.team-t5 .team-label { background: var(--t5); }
+  .weekly-table tr.team-t6 .team-label { background: var(--t6); }
+  .weekly-table tr.team-t7 .team-label { background: var(--t7); }
+  .weekly-table tr.team-t1 td:not(.team-label) { background: color-mix(in srgb, var(--t1-soft) 60%, white); }
+  .weekly-table tr.team-t2 td:not(.team-label) { background: color-mix(in srgb, var(--t2-soft) 60%, white); }
+  .weekly-table tr.team-t3 td:not(.team-label) { background: color-mix(in srgb, var(--t3-soft) 60%, white); }
+  .weekly-table tr.team-t4 td:not(.team-label) { background: color-mix(in srgb, var(--t4-soft) 60%, white); }
+  .weekly-table tr.team-t5 td:not(.team-label) { background: color-mix(in srgb, var(--t5-soft) 60%, white); }
+  .weekly-table tr.team-t6 td:not(.team-label) { background: color-mix(in srgb, var(--t6-soft) 60%, white); }
+  .weekly-table tr.team-t7 td:not(.team-label) { background: color-mix(in srgb, var(--t7-soft) 60%, white); }
+  .week-cell { font-size: 0.78rem; }
+  .week-cell .person-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    margin: 1px 0;
+  }
+  .week-cell .person-line.is-out { background: rgba(0,0,0,0.05); }
+  .week-cell .person-line.is-plan-b { background: var(--plan-b-bg); }
+  .week-cell .person-line.is-plan-c { background: var(--plan-c-bg); }
+  .week-cell .person-line .name {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .week-cell .person-line .name.out {
+    color: var(--ink-mute);
+    text-decoration: line-through;
+  }
+  .week-cell .person-line .cov {
+    color: var(--ink-mute);
+    font-size: 0.74rem;
+  }
+  .week-cell .person-line .cov.self { color: var(--ok); }
+  .week-cell .person-line .cov.plan-b { color: var(--plan-b); font-weight: 600; }
+  .week-cell .person-line .cov.plan-c { color: var(--plan-c); font-weight: 600; }
+  .week-legend {
+    padding: 12px 16px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+  /* ABSENCES MODAL */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 60px 16px;
+    z-index: 100;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border-radius: 8px;
+    max-width: 700px;
+    width: 100%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .modal-header h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.3rem;
+    cursor: pointer;
+    color: var(--ink-mute);
+    line-height: 1;
+  }
+  .modal-body { padding: 18px 20px; overflow-y: auto; }
+  .absence-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr auto;
+    gap: 8px;
+    margin-bottom: 16px;
+    align-items: end;
+  }
+  .absence-form label {
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .absence-form select, .absence-form input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    background: var(--surface);
+  }
+  .add-btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    height: 36px;
+  }
+  .absences-list { display: flex; flex-direction: column; gap: 6px; }
+  .absence-row {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr auto;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--line-soft);
+    border-radius: 6px;
+    align-items: center;
+    font-size: 0.85rem;
+  }
+  .absence-row.past { opacity: 0.55; }
+  .absence-row .person { font-weight: 500; }
+  .absence-row .dates { color: var(--ink-soft); }
+  .absence-row .reason { color: var(--ink-mute); font-size: 0.8rem; font-style: italic; }
+  .remove-btn {
+    background: none;
+    border: none;
+    color: var(--ink-mute);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .remove-btn:hover { background: var(--plan-c-bg); color: var(--plan-c); }
+  .empty-state {
+    padding: 24px;
+    text-align: center;
+    color: var(--ink-mute);
+    font-size: 0.9rem;
+  }
+  .clear-all {
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--ink-mute);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+    margin-top: 12px;
+  }
+  .print-only { display: none; }
+  .print-title { font-size: 18px; font-weight: 700; margin: 0 0 4px 0; }
+  .print-subtitle { font-size: 13px; color: var(--ink-soft); margin: 0; }
+  @media print {
+    @page { size: landscape; margin: 0.4in; }
+    body {
+      background: white;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .top-bar, #day-view, .modal-overlay { display: none !important; }
+    #week-view { display: block !important; }
+    .print-only { display: block !important; margin-bottom: 12px; }
+    .weekly-view {
+      margin: 0;
+      border: 1px solid #888;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .week-legend { border-top: 1px solid #888; }
+    .weekly-table { font-size: 9pt; }
+    .weekly-table th, .weekly-table td { padding: 6px 8px; }
+    .weekly-table tr { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="brand">Park Place IM — Coverage Planner</div>
+  <div class="date-nav">
+    <button class="date-btn" onclick="changeDay(-1)" title="Previous day">‹</button>
+    <input type="date" id="date-input" class="date-input">
+    <button class="date-btn" onclick="changeDay(1)" title="Next day">›</button>
+  </div>
+  <button class="today-btn" onclick="goToToday()">Today</button>
+  <span class="date-label" id="date-label"></span>
+  <button class="absences-btn" onclick="openAbsences()">
+    Scheduled absences
+    <span class="absence-count" id="absence-count">0</span>
+  </button>
+  <div class="view-toggle">
+    <button id="view-day-btn" class="active" onclick="setView('day')">Day</button>
+    <button id="view-week-btn" onclick="setView('week')">Week</button>
+  </div>
+  <button class="reset-btn" onclick="resetCurrent()">Reset</button>
+  <button class="export-btn" id="export-btn" onclick="exportPDF()" style="display:none;">Export PDF</button>
+</div>
+
+<div id="day-view">
+  <div class="summary-banner">
+    <div class="banner-title" id="banner-title">Coverage</div>
+    <div class="banner-subtitle">Plan A: within team · Plan B: buddy team APP · Plan C: nursing supervisor</div>
+    <div class="banner-stats" id="banner-stats"></div>
+  </div>
+  <div id="plan-c-container"></div>
+  <div class="team-grid" id="team-grid"></div>
+</div>
+
+<div id="week-view" style="display:none;">
+  <div class="print-only" id="print-header-block">
+    <h1 class="print-title">Park Place IM — Coverage Planner</h1>
+    <p class="print-subtitle" id="print-week-label"></p>
+  </div>
+  <div class="weekly-view">
+    <table class="weekly-table">
+      <thead>
+        <tr>
+          <th>Team</th><th>Monday</th><th>Tuesday</th><th>Wednesday</th><th>Thursday</th><th>Friday</th>
+        </tr>
+      </thead>
+      <tbody id="weekly-tbody"></tbody>
+    </table>
+    <div class="week-legend">
+      <div class="legend-item"><span class="legend-dot" style="background:var(--ok);"></span>Self / within team</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--plan-b);"></span>Plan B — buddy APP</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--plan-c);"></span>Plan C — supervisor</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--out);"></span>Out of office</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="absences-modal" onclick="closeAbsencesIfOverlay(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2>Scheduled absences</h2>
+      <button class="modal-close" onclick="closeAbsences()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="absence-form">
+        <div>
+          <label>Person</label>
+          <select id="abs-person"><option value="">Select…</option></select>
+        </div>
+        <div>
+          <label>Start date</label>
+          <input type="date" id="abs-start">
+        </div>
+        <div>
+          <label>End date</label>
+          <input type="date" id="abs-end">
+        </div>
+        <div>
+          <label>Reason (optional)</label>
+          <input type="text" id="abs-reason" placeholder="Vacation, CME…">
+        </div>
+        <button class="add-btn" onclick="addAbsence()">Add</button>
+      </div>
+      <div class="absences-list" id="absences-list"></div>
+      <button class="clear-all" onclick="clearAllAbsences()">Clear all</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PHYS = 'MD';
+const APP = 'APP';
+
+const TEAMS = [
+  { id: 'T1', name: 'Bogus', cls: 'team-t1', members: [
+    { name: 'Turcotte', role: PHYS, schedule: [1,1,1,1,0] },
+    { name: 'Brittany', role: APP,  schedule: [0,1,1,1,1] },
+  ]},
+  { id: 'T2', name: 'Fort', cls: 'team-t2', members: [
+    { name: 'Gallafent', role: PHYS, schedule: [1,1,1,0,1] },
+    { name: 'Carey',    role: APP,  schedule: [1,0,1,1,1] },
+  ]},
+  { id: 'T3', name: 'Warm Springs', cls: 'team-t3', members: [
+    { name: 'Pelton', role: PHYS, schedule: [0,1,1,1,1] },
+    { name: 'Nelson', role: PHYS, schedule: [1,0,1,0,1] },
+    { name: 'Kelley', role: APP,  schedule: [1,0,0,1,0] },
+  ]},
+  { id: 'T4', name: 'Harrison', cls: 'team-t4', members: [
+    { name: 'Schell',  role: PHYS, schedule: [1,1,1,1,0] },
+    { name: 'Stubbs',  role: PHYS, schedule: [1,1,0,1,0] },
+    { name: 'Phyllis', role: APP,  schedule: [1,1,0,0,1] },
+    { name: 'Sam',     role: APP,  schedule: [0,0,1,0,1] },
+  ]},
+  { id: 'T5', name: 'Gowen', cls: 'team-t5', members: [
+    { name: 'Sorenson', role: PHYS, degree: 'DO', schedule: [1,1,0,1,1] },
+    { name: 'Gabutti',  role: PHYS, schedule: [0,1,1,1,1] },
+    { name: 'Sophia',   role: APP,  schedule: [1,0,1,1,0] },
+  ]},
+  { id: 'T6', name: 'Myrtle', cls: 'team-t6', members: [
+    { name: 'Donovan', role: PHYS, schedule: [1,0,1,0,1] },
+    { name: 'Miltner', role: PHYS, schedule: [1,1,0,1,1] },
+    { name: 'Micah',   role: APP,  schedule: [1,1,0,1,1] },
+  ]},
+  { id: 'T7', name: 'Walnut', cls: 'team-t7', members: [
+    { name: 'Tanabe', role: PHYS, schedule: [0,1,1,1,1] },
+    { name: 'Meier',  role: PHYS, schedule: [1,0,1,1,1] },
+    { name: 'Sorcha', role: APP,  schedule: [1,1,1,0,0] },
+  ]},
+];
+
+// Configuration B buddy groups
+const BUDDY_GROUPS = [
+  ['T2', 'T3'],
+  ['T5', 'T7'],
+  ['T1', 'T4', 'T6'],
+];
+
+function buddyGroupOf(teamId) {
+  return BUDDY_GROUPS.find(g => g.includes(teamId));
+}
+
+function buddyTeamsOf(teamId) {
+  const group = buddyGroupOf(teamId);
+  return group ? group.filter(t => t !== teamId) : [];
+}
+
+function teamById(id) { return TEAMS.find(t => t.id === id); }
+
+// ---- State ----
+let currentDate = new Date();
+while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+  currentDate.setDate(currentDate.getDate() + 1);
+}
+let currentView = 'day';
+// attendanceByDate[dateKey] = { 'PersonName': true/false } — manual overrides
+let attendanceByDate = {};
+// scheduledAbsences = [{ person, start, end, reason }, ...] (stored as YYYY-MM-DD strings)
+let scheduledAbsences = [];
+
+// ---- localStorage ----
+const STORAGE_KEY = 'parkplace_coverage_absences_v3';
+const SUPERVISOR_KEY = 'parkplace_supervisor_v2';
+function loadAbsences() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) scheduledAbsences = JSON.parse(raw);
+  } catch (e) { scheduledAbsences = []; }
+}
+function saveAbsences() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(scheduledAbsences));
+  } catch (e) {}
+}
+let supervisorSelections = {};  // { dateKey: { teamId: personName } }
+function loadSupervisorSelections() {
+  try {
+    const raw = localStorage.getItem(SUPERVISOR_KEY);
+    if (raw) supervisorSelections = JSON.parse(raw);
+  } catch (e) { supervisorSelections = {}; }
+}
+function saveSupervisorSelections() {
+  try {
+    localStorage.setItem(SUPERVISOR_KEY, JSON.stringify(supervisorSelections));
+  } catch (e) {}
+}
+loadAbsences();
+loadSupervisorSelections();
+
+// ---- Helpers ----
+function dateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function dayOfWeekIndex(d) {
+  // 0 = Mon ... 4 = Fri; -1 for weekend
+  const js = d.getDay();
+  if (js === 0 || js === 6) return -1;
+  return js - 1;
+}
+function findMondayOf(d) {
+  const out = new Date(d);
+  while (out.getDay() !== 1) out.setDate(out.getDate() - 1);
+  return out;
+}
+function nextWorkday(d) {
+  const out = new Date(d);
+  out.setDate(out.getDate() + 1);
+  while (out.getDay() === 0 || out.getDay() === 6) {
+    out.setDate(out.getDate() + 1);
+  }
+  return out;
+}
+function isScheduledOut(person, key) {
+  return scheduledAbsences.some(a => a.person === person && key >= a.start && key <= a.end);
+}
+function getMatchingAbsence(person, key) {
+  return scheduledAbsences.find(a => a.person === person && key >= a.start && key <= a.end);
+}
+
+// Determine if a person is "in" on a given date (considering schedule, scheduled absences, manual overrides)
+function isPersonIn(person, date) {
+  const key = dateKey(date);
+  // Manual override wins
+  if (attendanceByDate[key] && person.name in attendanceByDate[key]) {
+    return attendanceByDate[key][person.name];
+  }
+  // Scheduled absence forces out
+  if (isScheduledOut(person.name, key)) return false;
+  // Regular schedule
+  const di = dayOfWeekIndex(date);
+  if (di < 0) return false;
+  return person.schedule[di] === 1;
+}
+
+function toggleAttendance(personName, date) {
+  const key = dateKey(date);
+  if (!attendanceByDate[key]) attendanceByDate[key] = {};
+  // Determine current state
+  const team = TEAMS.find(t => t.members.some(m => m.name === personName));
+  const member = team.members.find(m => m.name === personName);
+  const currentlyIn = isPersonIn(member, date);
+  attendanceByDate[key][personName] = !currentlyIn;
+  render();
+}
+
+// ---- Coverage logic ----
+// Coverage object structure:
+//   coverage[personName] = { label: <display string>, type: <css class hint>, teamId }
+//   type values: 'team' | 'self' | 'self-app' | 'self-md' | 'plan-a' | 'plan-b' | 'plan-c' | 'out'
+function classifyTeam(team, date) {
+  const inMembers = team.members.filter(m => isPersonIn(m, date));
+  const outMembers = team.members.filter(m => !isPersonIn(m, date));
+  const hasMD = inMembers.some(m => m.role === PHYS);
+  const hasAPP = inMembers.some(m => m.role === APP);
+  let status;
+  if (inMembers.length === 0) status = 'empty';
+  else if (!hasAPP) status = 'no-app';
+  else if (!hasMD) status = 'no-md';
+  else status = 'full';
+  return { status, inMembers, outMembers, hasMD, hasAPP };
+}
+
+function computeCoverage(date) {
+  const key = dateKey(date);
+
+  // Pass 1: classify each team based on raw in/out
+  const teamState = {};
+  for (const team of TEAMS) {
+    teamState[team.id] = classifyTeam(team, date);
+  }
+
+  // Pass 2: figure out Plan B assignments (which APPs get pulled to cover empty buddies)
+  const pulledAPPs = new Set();
+  const pulledAPPMeta = {}; // appName -> { fromTeam, toTeam, ptoLoaded }
+  const planBCoverer = {};
+  const planCNeeded = [];
+
+  for (const team of TEAMS) {
+    const state = teamState[team.id];
+    const teamAPPsIn = state.inMembers.filter(m => m.role === APP);
+    const teamAPPAbsent = teamAPPsIn.length === 0;
+    const teamMDsOnPTO = team.members.filter(mm =>
+      mm.role === PHYS && isScheduledOut(mm.name, key)
+    );
+    const hasMDOnPTO = teamMDsOnPTO.length > 0;
+    const isFullyEmpty = state.status === 'empty';
+    // Pull when (APP absent AND ≥1 MD on PTO) OR (team is fully empty)
+    const shouldPull = (teamAPPAbsent && hasMDOnPTO) || isFullyEmpty;
+    if (!shouldPull) continue;
+
+    const buddies = buddyTeamsOf(team.id);
+    let chosen = null;
+    let fromTeam = null;
+    for (const buddyId of buddies) {
+      const bs = teamState[buddyId];
+      const availableAPP = bs.inMembers.find(m => m.role === APP && !pulledAPPs.has(m.name));
+      const buddyHasMD = bs.inMembers.some(m => m.role === PHYS);
+      if (availableAPP && buddyHasMD) {
+        chosen = availableAPP;
+        fromTeam = buddyId;
+        break;
+      }
+    }
+    if (chosen) {
+      planBCoverer[team.id] = { coverer: chosen, fromTeam };
+      pulledAPPs.add(chosen.name);
+      // PTO-loaded iff target team has at least one MD on PTO
+      pulledAPPMeta[chosen.name] = {
+        fromTeam,
+        toTeam: team.id,
+        ptoLoaded: hasMDOnPTO,
+      };
+    } else {
+      planCNeeded.push(team.id);
+    }
+  }
+
+  // Pass 3: per-person labels
+  // - All in-office members show "self" (including APPs pulled to a buddy team)
+  // - All out members show the name of their cross-role coverer
+  // - Pulled APPs remain eligible to cover their own team's absent members
+  // - If no coverer can be found at all, fall back to "supervisor"
+  // - Fully empty teams use Plan B (buddy APP) or Plan C (supervisor)
+  const coverage = {};
+
+  for (const team of TEAMS) {
+    const state = teamState[team.id];
+    const buddyArriving = planBCoverer[team.id] ? planBCoverer[team.id].coverer : null;
+    const buddyArrivingPTOLoaded = buddyArriving ? pulledAPPMeta[buddyArriving.name].ptoLoaded : false;
+
+    // Fully empty team: every member gets the buddy label, or supervisor if no buddy was found
+    if (state.status === 'empty') {
+      if (buddyArriving) {
+        for (const m of team.members) {
+          coverage[m.name] = { label: `${buddyArriving.name} (buddy)`, type: 'plan-b', teamId: team.id };
+        }
+      } else {
+        for (const m of team.members) {
+          coverage[m.name] = { label: 'supervisor', type: 'plan-c', teamId: team.id };
+        }
+      }
+      continue;
+    }
+
+    // Non-empty team
+    const inAPPs = state.inMembers.filter(m => m.role === APP);
+    const inMDs = state.inMembers.filter(m => m.role === PHYS);
+    const nonPulledAPPs = inAPPs.filter(a => !pulledAPPs.has(a.name));
+    // "Available for in-office home coverage": not pulled, OR pulled-but-not-PTO-loaded
+    const availableForHomeInOffice = inAPPs.filter(a => {
+      if (!pulledAPPs.has(a.name)) return true;
+      const meta = pulledAPPMeta[a.name];
+      return meta && !meta.ptoLoaded;
+    });
+    const sortedAvailable = [...availableForHomeInOffice].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedNonPulledAPPs = [...nonPulledAPPs].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedInAPPs = [...inAPPs].sort((a, b) => a.name.localeCompare(b.name));
+    const sortedInMDs = [...inMDs].sort((a, b) => a.name.localeCompare(b.name));
+
+    // T4 pairing
+    const T4_PAIRS = { 'Schell': 'Sam', 'Stubbs': 'Phyllis' };
+    const t4PairingActive = team.id === 'T4' &&
+      availableForHomeInOffice.some(a => a.name === 'Phyllis') &&
+      availableForHomeInOffice.some(a => a.name === 'Sam');
+
+    // Same-team PTO narrowing (APP present + MD on PTO)
+    const ptoMDsOut = state.outMembers.filter(m => m.role === PHYS && isScheduledOut(m.name, key));
+    const teamHasPTO = ptoMDsOut.length > 0;
+
+    const isMultiMDTeam = team.members.filter(m => m.role === PHYS).length > 1;
+
+    // In-office members
+    for (const m of state.inMembers) {
+      if (m.role === APP) {
+        coverage[m.name] = { label: m.name, type: 'self', teamId: team.id };
+      } else {
+        // In-office MD
+        if (teamHasPTO || (buddyArriving && buddyArrivingPTOLoaded)) {
+          // Same-team PTO narrowing or arriving buddy is PTO-loaded → self-cover
+          coverage[m.name] = { label: m.name, type: 'self', teamId: team.id };
+        } else {
+          let coverers = [];
+          if (t4PairingActive && T4_PAIRS[m.name]) {
+            const paired = availableForHomeInOffice.find(a => a.name === T4_PAIRS[m.name]);
+            if (paired) coverers = [paired];
+          } else {
+            coverers = sortedAvailable;
+          }
+          if (coverers.length > 0) {
+            coverage[m.name] = {
+              label: coverers.map(c => c.name).join('/'),
+              type: 'plan-a',
+              teamId: team.id,
+            };
+          } else {
+            coverage[m.name] = { label: m.name, type: 'self', teamId: team.id };
+          }
+        }
+      }
+    }
+
+    // Out members
+    for (const m of state.outMembers) {
+      // If a buddy APP is arriving to cover this team (partial pull), all out members get the buddy label
+      if (buddyArriving) {
+        coverage[m.name] = { label: `${buddyArriving.name} (buddy)`, type: 'plan-b', teamId: team.id };
+        continue;
+      }
+
+      let coverers = [];
+      if (m.role === PHYS) {
+        const isPTO = isScheduledOut(m.name, key);
+
+        if (isPTO) {
+          // PTO MD without buddy → home APP covers (we know the home APP is present, otherwise buddy would have been pulled)
+          if (team.id === 'T4' && T4_PAIRS[m.name]) {
+            const paired = inAPPs.find(a => a.name === T4_PAIRS[m.name]);
+            if (paired) coverers = [paired];
+          }
+          if (coverers.length === 0) {
+            if (sortedNonPulledAPPs.length > 0) coverers = sortedNonPulledAPPs;
+            else if (sortedInAPPs.length > 0) coverers = sortedInAPPs;
+          }
+        } else {
+          // Non-PTO out MD (day off / manual toggle)
+          // - APP present on team: APP covers (per "APP present always covers" rule)
+          // - APP absent + multi-MD team: other in-team MD covers
+          // - APP absent + single-MD team: shouldn't reach here (would be fully empty)
+          if (inAPPs.length > 0) {
+            if (team.id === 'T4' && T4_PAIRS[m.name]) {
+              const paired = inAPPs.find(a => a.name === T4_PAIRS[m.name]);
+              if (paired) coverers = [paired];
+            }
+            if (coverers.length === 0) {
+              if (sortedNonPulledAPPs.length > 0) coverers = sortedNonPulledAPPs;
+              else if (sortedInAPPs.length > 0) coverers = sortedInAPPs;
+            }
+          } else if (isMultiMDTeam && sortedInMDs.length > 0) {
+            // APP absent, multi-MD team → other in-team MD covers
+            coverers = sortedInMDs;
+          }
+        }
+      } else {
+        // Out APP
+        if (team.id === 'T4') {
+          // T4 rule: APPs cover each other; if both APPs are out, the paired MD covers
+          const otherAPPs = inAPPs.filter(a => a.name !== m.name);
+          if (otherAPPs.length > 0) {
+            coverers = [...otherAPPs].sort((a, b) => a.name.localeCompare(b.name));
+          } else {
+            // Both APPs out — use bidirectional T4 pairing for APP→MD
+            const T4_APP_TO_MD = { 'Sam': 'Schell', 'Phyllis': 'Stubbs' };
+            const pairedMDName = T4_APP_TO_MD[m.name];
+            if (pairedMDName) {
+              const pairedMD = inMDs.find(md => md.name === pairedMDName);
+              if (pairedMD) coverers = [pairedMD];
+            }
+            if (coverers.length === 0 && sortedInMDs.length > 0) {
+              // Paired MD also out — fall back to any in-office MD
+              coverers = sortedInMDs;
+            }
+          }
+        } else {
+          // MD(s) cover
+          if (sortedInMDs.length > 0) {
+            coverers = sortedInMDs;
+          } else {
+            const otherAPPs = inAPPs.filter(a => a.name !== m.name);
+            coverers = [...otherAPPs].sort((a, b) => a.name.localeCompare(b.name));
+          }
+        }
+      }
+
+      if (coverers.length > 0) {
+        coverage[m.name] = {
+          label: coverers.map(c => c.name).join('/'),
+          type: 'plan-a',
+          teamId: team.id,
+        };
+      } else {
+        coverage[m.name] = { label: 'supervisor', type: 'plan-c', teamId: team.id };
+      }
+    }
+  }
+
+  // Apply supervisor selections: replace 'supervisor' on a per-person basis
+  const daySelections = supervisorSelections[key] || {};
+  for (const personName in daySelections) {
+    const chosenName = daySelections[personName];
+    if (!chosenName) continue;
+    if (coverage[personName] && coverage[personName].type === 'plan-c') {
+      coverage[personName] = {
+        label: `${chosenName} (designated)`,
+        type: 'plan-b',
+        teamId: coverage[personName].teamId,
+      };
+    }
+  }
+
+  return { teamState, coverage, planCNeeded, pulledAPPs, planBCoverer };
+}
+
+// ---- Rendering: Day view ----
+function renderDayView() {
+  const di = dayOfWeekIndex(currentDate);
+  const dateLabel = currentDate.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  document.getElementById('date-label').textContent = dateLabel;
+  document.getElementById('banner-title').textContent = `Coverage — ${dateLabel}`;
+  document.getElementById('date-input').value = dateKey(currentDate);
+
+  if (di < 0) {
+    document.getElementById('team-grid').innerHTML = '<div class="empty-state" style="grid-column:1/-1;">Weekend — clinic closed.</div>';
+    document.getElementById('banner-stats').innerHTML = '';
+    document.getElementById('plan-c-container').innerHTML = '';
+    return;
+  }
+
+  const { teamState, coverage, planCNeeded, pulledAPPs } = computeCoverage(currentDate);
+
+  // Stats
+  let countFull = 0, countNoApp = 0, countNoMd = 0, countEmpty = 0;
+  for (const team of TEAMS) {
+    const s = teamState[team.id].status;
+    if (s === 'full') countFull++;
+    else if (s === 'no-app') countNoApp++;
+    else if (s === 'no-md') countNoMd++;
+    else countEmpty++;
+  }
+  document.getElementById('banner-stats').innerHTML = `
+    <div class="stat-pill"><span class="value">${countFull}</span><span class="label">full teams</span></div>
+    <div class="stat-pill"><span class="value">${countNoApp}</span><span class="label">no APP</span></div>
+    <div class="stat-pill"><span class="value">${countNoMd}</span><span class="label">no MD</span></div>
+    <div class="stat-pill"><span class="value">${countEmpty}</span><span class="label">fully empty</span></div>
+  `;
+
+  // Plan C alert
+  if (planCNeeded.length > 0) {
+    // Build a roster of in-office people, APPs first (alphabetical), then physicians (alphabetical)
+    const inAPPsAll = [], inMDsAll = [];
+    for (const t of TEAMS) {
+      for (const m of t.members) {
+        if (!isPersonIn(m, currentDate)) continue;
+        if (m.role === APP) inAPPsAll.push({ ...m, teamName: t.name });
+        else inMDsAll.push({ ...m, teamName: t.name });
+      }
+    }
+    inAPPsAll.sort((a, b) => a.name.localeCompare(b.name));
+    inMDsAll.sort((a, b) => a.name.localeCompare(b.name));
+
+    const daySelections = supervisorSelections[dateKey(currentDate)] || {};
+
+    const renderOptions = (current) => {
+      const appOpts = inAPPsAll.map(p =>
+        `<option value="${p.name}" ${current === p.name ? 'selected' : ''}>${p.name} (${p.teamName})</option>`
+      ).join('');
+      const mdOpts = inMDsAll.map(p =>
+        `<option value="${p.name}" ${current === p.name ? 'selected' : ''}>${p.name} (${p.teamName})</option>`
+      ).join('');
+      return `
+        <option value="">— designate coverer —</option>
+        <optgroup label="APPs">${appOpts}</optgroup>
+        <optgroup label="Physicians">${mdOpts}</optgroup>
+      `;
+    };
+
+    const teamBlocksHTML = planCNeeded.map(teamId => {
+      const t = teamById(teamId);
+      const outMembers = t.members.filter(m => !isPersonIn(m, currentDate));
+      const memberRowsHTML = outMembers.map(m => {
+        const current = daySelections[m.name] || '';
+        return `
+          <div class="plan-c-row">
+            <span class="plan-c-team-name">${m.name}:</span>
+            <select class="plan-c-select" onchange="setSupervisorChoice('${m.name}', this.value)">
+              ${renderOptions(current)}
+            </select>
+          </div>
+        `;
+      }).join('');
+      return `
+        <div class="plan-c-team-block">
+          <div class="plan-c-team-heading">${t.name}</div>
+          ${memberRowsHTML}
+        </div>
+      `;
+    }).join('');
+
+    document.getElementById('plan-c-container').innerHTML = `
+      <div class="plan-c-alert">
+        <div class="title">Plan C — Nursing supervisor</div>
+        <div class="body">Designate a coverer for each out provider:</div>
+        <div class="plan-c-rows">${teamBlocksHTML}</div>
+      </div>
+    `;
+  } else {
+    document.getElementById('plan-c-container').innerHTML = '';
+  }
+
+  // Team grid
+  const grid = document.getElementById('team-grid');
+  grid.innerHTML = '';
+  for (const team of TEAMS) {
+    const state = teamState[team.id];
+    const statusLabel = {
+      'full': 'Full team',
+      'no-app': 'No APP',
+      'no-md': 'No MD',
+      'empty': 'Fully empty',
+    }[state.status];
+
+    const card = document.createElement('div');
+    card.className = `team-card ${team.cls}`;
+
+    const buddies = buddyTeamsOf(team.id).map(b => teamById(b).name).join(' + ');
+    card.innerHTML = `
+      <div class="team-band">
+        <span>${team.name}</span>
+        <span class="team-status-chip">${statusLabel}</span>
+      </div>
+      <div class="members">
+        ${team.members.map(m => {
+          const inOffice = isPersonIn(m, currentDate);
+          const cov = coverage[m.name];
+          const key = dateKey(currentDate);
+          let scheduledTag = '';
+          if (!inOffice && isScheduledOut(m.name, key)) {
+            const abs = getMatchingAbsence(m.name, key);
+            const endDate = new Date(abs.end + 'T12:00:00');
+            const ret = nextWorkday(endDate);
+            const retLabel = ret.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            scheduledTag = `<span class="scheduled-tag" title="Out, returns ${retLabel}">OOO · returns ${retLabel}</span>`;
+          }
+          let chipHTML = '';
+          if (cov && cov.label) {
+            let chipClass = 'coverage-chip';
+            if (cov.type === 'plan-b') chipClass += ' plan-b';
+            else if (cov.type === 'plan-c') chipClass += ' plan-c';
+            chipHTML = `<span class="${chipClass}">${cov.label}</span>`;
+          }
+          return `
+            <div class="member-row">
+              <button class="toggle ${inOffice ? 'in' : 'out'}" onclick="toggleAttendance('${m.name}', currentDate)" title="${inOffice ? 'Mark out' : 'Mark in'}">${inOffice ? '✓' : ''}</button>
+              <div class="member-info">
+                <div class="member-name ${inOffice ? '' : 'out'}">${m.name}</div>
+                <div class="member-role">${m.degree || m.role}</div>
+                ${scheduledTag ? `<div class="ooo-line">${scheduledTag}</div>` : ''}
+              </div>
+              ${chipHTML}
+            </div>
+          `;
+        }).join('')}
+      </div>
+      ${state.status !== 'empty' ? `<div style="padding:8px 14px;font-size:0.72rem;color:var(--ink-mute);border-top:1px solid var(--line-soft);">Buddy: ${buddies}</div>` : `<div style="padding:8px 14px;font-size:0.72rem;color:var(--plan-b);border-top:1px solid var(--line-soft);font-weight:500;">Plan B: ${buddies}</div>`}
+    `;
+    grid.appendChild(card);
+  }
+}
+
+// ---- Rendering: Week view ----
+function renderWeekView() {
+  const monday = findMondayOf(currentDate);
+  const days = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    days.push(d);
+  }
+  const dateLabel = `Week of ${monday.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' })}`;
+  document.getElementById('date-label').textContent = dateLabel;
+  document.getElementById('date-input').value = dateKey(currentDate);
+  const printLabelEl = document.getElementById('print-week-label');
+  if (printLabelEl) printLabelEl.textContent = dateLabel;
+
+  // For each team, render a row across the 5 days
+  const tbody = document.getElementById('weekly-tbody');
+  tbody.innerHTML = '';
+  // Precompute coverage for each day
+  const coverageByDay = days.map(d => computeCoverage(d));
+
+  for (const team of TEAMS) {
+    const tr = document.createElement('tr');
+    tr.className = team.cls;
+    let html = `<td class="team-label">${team.name}</td>`;
+    for (let i = 0; i < 5; i++) {
+      const d = days[i];
+      const { coverage } = coverageByDay[i];
+      let cellHTML = '<div class="week-cell">';
+      for (const m of team.members) {
+        const inOffice = isPersonIn(m, d);
+        const cov = coverage[m.name];
+        let label = '', klass = '', lineClass = '';
+        if (cov && cov.label) {
+          label = cov.label;
+          if (cov.type === 'plan-b') { klass = 'plan-b'; lineClass = 'is-plan-b'; }
+          else if (cov.type === 'plan-c') { klass = 'plan-c'; lineClass = 'is-plan-c'; }
+          else if (cov.type === 'team' || cov.type === 'self' || cov.type === 'self-app' || cov.type === 'self-md') { klass = 'self'; }
+        }
+        if (!inOffice && !lineClass) lineClass = 'is-out';
+        cellHTML += `
+          <div class="person-line ${lineClass}">
+            <span class="name ${inOffice ? '' : 'out'}">${m.name}</span>
+            <span class="cov ${klass}">${label}</span>
+          </div>
+        `;
+      }
+      cellHTML += '</div>';
+      html += `<td>${cellHTML}</td>`;
+    }
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  }
+}
+
+// ---- Absence manager ----
+function openAbsences() {
+  // Populate person dropdown
+  const sel = document.getElementById('abs-person');
+  if (sel.options.length <= 1) {
+    for (const team of TEAMS) {
+      for (const m of team.members) {
+        const opt = document.createElement('option');
+        opt.value = m.name;
+        opt.textContent = `${m.name} (${team.name})`;
+        sel.appendChild(opt);
+      }
+    }
+  }
+  renderAbsencesList();
+  document.getElementById('absences-modal').classList.add('open');
+}
+function closeAbsences() {
+  document.getElementById('absences-modal').classList.remove('open');
+  render();
+}
+function closeAbsencesIfOverlay(ev) {
+  if (ev.target === ev.currentTarget) closeAbsences();
+}
+function addAbsence() {
+  const person = document.getElementById('abs-person').value;
+  const start = document.getElementById('abs-start').value;
+  const end = document.getElementById('abs-end').value;
+  const reason = document.getElementById('abs-reason').value.trim();
+  if (!person) { alert('Pick a person.'); return; }
+  if (!start || !end) { alert('Pick start and end dates.'); return; }
+  if (start > end) { alert('Start must be on or before end.'); return; }
+  scheduledAbsences.push({ person, start, end, reason });
+  saveAbsences();
+  document.getElementById('abs-person').value = '';
+  document.getElementById('abs-reason').value = '';
+  renderAbsencesList();
+  updateAbsenceCount();
+  render();
+}
+function removeAbsence(idx) {
+  scheduledAbsences.splice(idx, 1);
+  saveAbsences();
+  renderAbsencesList();
+  updateAbsenceCount();
+  render();
+}
+function clearAllAbsences() {
+  if (scheduledAbsences.length === 0) return;
+  if (!confirm(`Remove all ${scheduledAbsences.length} absences?`)) return;
+  scheduledAbsences = [];
+  saveAbsences();
+  renderAbsencesList();
+  updateAbsenceCount();
+  render();
+}
+function renderAbsencesList() {
+  const el = document.getElementById('absences-list');
+  if (scheduledAbsences.length === 0) {
+    el.innerHTML = '<div class="empty-state">No scheduled absences yet.</div>';
+    return;
+  }
+  const today = dateKey(new Date());
+  const sorted = [...scheduledAbsences].map((a, i) => ({...a, originalIdx: i})).sort((a,b) => a.start.localeCompare(b.start));
+  el.innerHTML = sorted.map(a => {
+    const isPast = a.end < today;
+    const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+    const range = a.start === a.end ? fmt(a.start) : `${fmt(a.start)} – ${fmt(a.end)}`;
+    return `
+      <div class="absence-row ${isPast ? 'past' : ''}">
+        <div class="person">${a.person}</div>
+        <div class="dates">${range}${isPast ? ' (past)' : ''}</div>
+        <div class="reason">${a.reason || ''}</div>
+        <button class="remove-btn" onclick="removeAbsence(${a.originalIdx})" title="Remove">✕</button>
+      </div>
+    `;
+  }).join('');
+}
+function updateAbsenceCount() {
+  const today = dateKey(new Date());
+  const active = scheduledAbsences.filter(a => a.end >= today).length;
+  const badge = document.getElementById('absence-count');
+  badge.textContent = active;
+  badge.style.display = active > 0 ? 'flex' : 'none';
+}
+
+function setSupervisorChoice(personName, chosenName) {
+  const key = dateKey(currentDate);
+  if (!supervisorSelections[key]) supervisorSelections[key] = {};
+  if (chosenName) {
+    supervisorSelections[key][personName] = chosenName;
+  } else {
+    delete supervisorSelections[key][personName];
+    if (Object.keys(supervisorSelections[key]).length === 0) delete supervisorSelections[key];
+  }
+  saveSupervisorSelections();
+  render();
+}
+
+// ---- Navigation ----
+function setView(v) {
+  currentView = v;
+  document.getElementById('day-view').style.display = v === 'day' ? 'block' : 'none';
+  document.getElementById('week-view').style.display = v === 'week' ? 'block' : 'none';
+  document.getElementById('view-day-btn').classList.toggle('active', v === 'day');
+  document.getElementById('view-week-btn').classList.toggle('active', v === 'week');
+  document.getElementById('export-btn').style.display = v === 'week' ? 'inline-block' : 'none';
+  render();
+}
+function exportPDF() {
+  if (currentView !== 'week') setView('week');
+  // Allow the week view a tick to render before printing
+  setTimeout(() => window.print(), 80);
+}
+function changeDay(delta) {
+  if (currentView === 'day') {
+    currentDate.setDate(currentDate.getDate() + delta);
+    while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+      currentDate.setDate(currentDate.getDate() + (delta > 0 ? 1 : -1));
+    }
+  } else {
+    currentDate.setDate(currentDate.getDate() + delta * 7);
+  }
+  render();
+}
+function goToToday() {
+  currentDate = new Date();
+  while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  render();
+}
+function resetCurrent() {
+  if (currentView === 'day') {
+    delete attendanceByDate[dateKey(currentDate)];
+  } else {
+    const monday = findMondayOf(currentDate);
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      delete attendanceByDate[dateKey(d)];
+    }
+  }
+  render();
+}
+function render() {
+  if (currentView === 'day') renderDayView();
+  else renderWeekView();
+}
+
+document.getElementById('date-input').addEventListener('change', e => {
+  if (e.target.value) {
+    currentDate = new Date(e.target.value + 'T12:00:00');
+    render();
+  }
+});
+
+updateAbsenceCount();
+render();
+</script>
+
+</body>
+</html>
