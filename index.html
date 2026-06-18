@@ -861,6 +861,13 @@ function classifyTeam(team, date) {
 function computeCoverage(date) {
   const key = dateKey(date);
 
+  // Read manual overrides up front so they can constrain the auto-logic below.
+  // manualDay[personName] = covererName — who manually covers that person.
+  // manuallyOccupied = providers already committed to a manual assignment;
+  // they are treated as unavailable for additional auto-coverage assignments.
+  const manualDay = manualCoverage[key] || {};
+  const manuallyOccupied = new Set(Object.values(manualDay).filter(Boolean));
+
   // Pass 1: classify each team based on raw in/out
   const teamState = {};
   for (const team of TEAMS) {
@@ -882,7 +889,6 @@ function computeCoverage(date) {
     );
     const hasMDOnPTO = teamMDsOnPTO.length > 0;
     const isFullyEmpty = state.status === 'empty';
-    // Pull when (APP absent AND ≥1 MD on PTO) OR (team is fully empty)
     const shouldPull = (teamAPPAbsent && hasMDOnPTO) || isFullyEmpty;
     if (!shouldPull) continue;
 
@@ -891,7 +897,10 @@ function computeCoverage(date) {
     let fromTeam = null;
     for (const buddyId of buddies) {
       const bs = teamState[buddyId];
-      const availableAPP = bs.inMembers.find(m => m.role === APP && !pulledAPPs.has(m.name));
+      // Exclude APPs already pulled or manually occupied
+      const availableAPP = bs.inMembers.find(m =>
+        m.role === APP && !pulledAPPs.has(m.name) && !manuallyOccupied.has(m.name)
+      );
       const buddyHasMD = bs.inMembers.some(m => m.role === PHYS);
       if (availableAPP && buddyHasMD) {
         chosen = availableAPP;
@@ -902,7 +911,6 @@ function computeCoverage(date) {
     if (chosen) {
       planBCoverer[team.id] = { coverer: chosen, fromTeam };
       pulledAPPs.add(chosen.name);
-      // PTO-loaded iff target team has at least one MD on PTO
       pulledAPPMeta[chosen.name] = {
         fromTeam,
         toTeam: team.id,
@@ -943,9 +951,10 @@ function computeCoverage(date) {
     // Non-empty team
     const inAPPs = state.inMembers.filter(m => m.role === APP);
     const inMDs = state.inMembers.filter(m => m.role === PHYS);
-    const nonPulledAPPs = inAPPs.filter(a => !pulledAPPs.has(a.name));
-    // "Available for in-office home coverage": not pulled, OR pulled-but-not-PTO-loaded
+    const nonPulledAPPs = inAPPs.filter(a => !pulledAPPs.has(a.name) && !manuallyOccupied.has(a.name));
+    // "Available for in-office home coverage": not pulled/occupied, OR pulled-but-not-PTO-loaded
     const availableForHomeInOffice = inAPPs.filter(a => {
+      if (manuallyOccupied.has(a.name)) return false;
       if (!pulledAPPs.has(a.name)) return true;
       const meta = pulledAPPMeta[a.name];
       return meta && !meta.ptoLoaded;
@@ -1096,7 +1105,6 @@ function computeCoverage(date) {
   }
 
   // Apply manual per-person coverage overrides (highest priority — overrides everything above).
-  const manualDay = manualCoverage[key] || {};
   for (const personName in manualDay) {
     const covererName = manualDay[personName];
     if (!covererName) continue;
