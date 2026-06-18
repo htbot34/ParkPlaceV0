@@ -765,7 +765,7 @@ function saveSupervisorSelections() {
 }
 
 const MANUAL_COVERAGE_KEY = 'parkplace_manual_coverage_v1';
-let manualCoverage = {};  // { dateKey: { teamId: providerName } }
+let manualCoverage = {};  // { dateKey: { providerName: teamId } }
 function loadManualCoverage() {
   try {
     const raw = localStorage.getItem(MANUAL_COVERAGE_KEY);
@@ -1095,16 +1095,24 @@ function computeCoverage(date) {
     }
   }
 
-  // Apply manual coverage overrides: any provider manually assigned to cover a team
-  // covers all out members of that team; the provider's own team is unaffected.
+  // Apply manual coverage overrides: provider -> teamId they've been pulled to cover.
+  // The provider stays on their home team; the receiving team's out members get them as coverer.
   const manualDay = manualCoverage[key] || {};
-  for (const teamId in manualDay) {
-    const providerName = manualDay[teamId];
-    if (!providerName) continue;
+  // Build a reverse map: teamId -> [providerNames] pulled to it manually
+  const manualCoverers = {};
+  for (const providerName in manualDay) {
+    const targetTeamId = manualDay[providerName];
+    if (!targetTeamId) continue;
+    if (!manualCoverers[targetTeamId]) manualCoverers[targetTeamId] = [];
+    manualCoverers[targetTeamId].push(providerName);
+  }
+  for (const teamId in manualCoverers) {
+    const names = manualCoverers[teamId];
+    const label = names.join('/');
     const team = teamById(teamId);
     for (const m of team.members) {
       if (!teamState[teamId].inMembers.includes(m)) {
-        coverage[m.name] = { label: providerName, type: 'plan-b', teamId };
+        coverage[m.name] = { label, type: 'plan-b', teamId };
       }
     }
   }
@@ -1208,38 +1216,6 @@ function renderDayView() {
     document.getElementById('plan-c-container').innerHTML = '';
   }
 
-  // Build sorted in-office roster for manual override dropdowns
-  const inAPPsAllForManual = [], inMDsAllForManual = [];
-  for (const t of TEAMS) {
-    for (const m of t.members) {
-      if (!isPersonIn(m, currentDate)) continue;
-      if (m.role === APP) inAPPsAllForManual.push({ ...m, teamName: t.name });
-      else inMDsAllForManual.push({ ...m, teamName: t.name });
-    }
-  }
-  inAPPsAllForManual.sort((a, b) => a.name.localeCompare(b.name));
-  inMDsAllForManual.sort((a, b) => a.name.localeCompare(b.name));
-
-  function manualDropdownHTML(teamId) {
-    const current = (manualDay && manualDay[teamId]) || '';
-    const appOpts = inAPPsAllForManual.map(p =>
-      `<option value="${p.name}" ${current === p.name ? 'selected' : ''}>${p.name} (${p.teamName})</option>`
-    ).join('');
-    const mdOpts = inMDsAllForManual.map(p =>
-      `<option value="${p.name}" ${current === p.name ? 'selected' : ''}>${p.name} (${p.teamName})</option>`
-    ).join('');
-    return `
-      <div style="padding:6px 14px 8px;border-top:1px solid var(--line-soft);">
-        <label style="font-size:0.68rem;color:var(--ink-mute);display:block;margin-bottom:3px;">Manual assign</label>
-        <select style="font-size:0.75rem;width:100%;border:1px solid var(--line-soft);border-radius:4px;padding:3px 6px;background:var(--surface);color:var(--ink);" onchange="setManualCoverage('${teamId}', this.value)">
-          <option value="">— none —</option>
-          <optgroup label="APPs">${appOpts}</optgroup>
-          <optgroup label="Physicians">${mdOpts}</optgroup>
-        </select>
-      </div>
-    `;
-  }
-
   // Team grid
   const grid = document.getElementById('team-grid');
   grid.innerHTML = '';
@@ -1256,6 +1232,11 @@ function renderDayView() {
     card.className = `team-card ${team.cls}`;
 
     const buddies = buddyTeamsOf(team.id).map(b => teamById(b).name).join(' + ');
+
+    // Options for the "pull to" select: all teams except this one
+    const otherTeamOpts = TEAMS.filter(t => t.id !== team.id)
+      .map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
     card.innerHTML = `
       <div class="team-band">
         <span>${team.name}</span>
@@ -1281,13 +1262,32 @@ function renderDayView() {
             else if (cov.type === 'plan-c') chipClass += ' plan-c';
             chipHTML = `<span class="${chipClass}">${cov.label}</span>`;
           }
+          // "Pull to team" control — only for in-office members
+          let pullHTML = '';
+          if (inOffice) {
+            const pulledTo = manualDay[m.name] || '';
+            const pulledTeamName = pulledTo ? teamById(pulledTo).name : '';
+            pullHTML = `
+              <div style="margin-top:3px;display:flex;align-items:center;gap:4px;">
+                <span style="font-size:0.65rem;color:var(--ink-mute);">Pull to:</span>
+                <select style="font-size:0.68rem;border:1px solid var(--line-soft);border-radius:3px;padding:1px 3px;background:var(--surface);color:${pulledTo ? 'var(--plan-b)' : 'var(--ink-mute)'};" onchange="setManualCoverage('${m.name}', this.value)">
+                  <option value="" ${!pulledTo ? 'selected' : ''}>—</option>
+                  ${TEAMS.filter(t => t.id !== team.id).map(t =>
+                    `<option value="${t.id}" ${pulledTo === t.id ? 'selected' : ''}>${t.name}</option>`
+                  ).join('')}
+                </select>
+                ${pulledTo ? `<span style="font-size:0.65rem;color:var(--plan-b);font-weight:600;">→ ${pulledTeamName}</span>` : ''}
+              </div>
+            `;
+          }
           return `
-            <div class="member-row">
+            <div class="member-row" style="flex-wrap:wrap;">
               <button class="toggle ${inOffice ? 'in' : 'out'}" onclick="toggleAttendance('${m.name}', currentDate)" title="${inOffice ? 'Mark out' : 'Mark in'}">${inOffice ? '✓' : ''}</button>
-              <div class="member-info">
+              <div class="member-info" style="flex:1;">
                 <div class="member-name ${inOffice ? '' : 'out'}">${m.name}</div>
                 <div class="member-role">${m.degree || m.role}</div>
                 ${scheduledTag ? `<div class="ooo-line">${scheduledTag}</div>` : ''}
+                ${pullHTML}
               </div>
               ${chipHTML}
             </div>
@@ -1295,7 +1295,6 @@ function renderDayView() {
         }).join('')}
       </div>
       ${state.status !== 'empty' ? `<div style="padding:8px 14px;font-size:0.72rem;color:var(--ink-mute);border-top:1px solid var(--line-soft);">Buddy: ${buddies}</div>` : `<div style="padding:8px 14px;font-size:0.72rem;color:var(--plan-b);border-top:1px solid var(--line-soft);font-weight:500;">Plan B: ${buddies}</div>`}
-      ${manualDropdownHTML(team.id)}
     `;
     grid.appendChild(card);
   }
@@ -1455,13 +1454,13 @@ function setSupervisorChoice(personName, chosenName) {
   render();
 }
 
-function setManualCoverage(teamId, providerName) {
+function setManualCoverage(providerName, teamId) {
   const key = dateKey(currentDate);
   if (!manualCoverage[key]) manualCoverage[key] = {};
-  if (providerName) {
-    manualCoverage[key][teamId] = providerName;
+  if (teamId) {
+    manualCoverage[key][providerName] = teamId;
   } else {
-    delete manualCoverage[key][teamId];
+    delete manualCoverage[key][providerName];
     if (Object.keys(manualCoverage[key]).length === 0) delete manualCoverage[key];
   }
   saveManualCoverage();
