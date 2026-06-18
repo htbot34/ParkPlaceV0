@@ -1253,7 +1253,7 @@ function renderDayView() {
           const manualCoverer = manualDay[m.name] || '';
           // Build options: all providers from all teams except this person
           const allProviderOpts = TEAMS.map(t =>
-            `<optgroup label="${t.name}">${t.members.filter(p => p.name !== m.name).map(p =>
+            `<optgroup label="${t.name}">${t.members.map(p =>
               `<option value="${p.name}" ${manualCoverer === p.name ? 'selected' : ''}>${p.name}</option>`
             ).join('')}</optgroup>`
           ).join('');
