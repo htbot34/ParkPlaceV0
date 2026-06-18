@@ -763,8 +763,24 @@ function saveSupervisorSelections() {
     localStorage.setItem(SUPERVISOR_KEY, JSON.stringify(supervisorSelections));
   } catch (e) {}
 }
+
+const MANUAL_COVERAGE_KEY = 'parkplace_manual_coverage_v1';
+let manualCoverage = {};  // { dateKey: { teamId: providerName } }
+function loadManualCoverage() {
+  try {
+    const raw = localStorage.getItem(MANUAL_COVERAGE_KEY);
+    if (raw) manualCoverage = JSON.parse(raw);
+  } catch (e) { manualCoverage = {}; }
+}
+function saveManualCoverage() {
+  try {
+    localStorage.setItem(MANUAL_COVERAGE_KEY, JSON.stringify(manualCoverage));
+  } catch (e) {}
+}
+
 loadAbsences();
 loadSupervisorSelections();
+loadManualCoverage();
 
 // ---- Helpers ----
 function dateKey(d) {
@@ -1079,7 +1095,21 @@ function computeCoverage(date) {
     }
   }
 
-  return { teamState, coverage, planCNeeded, pulledAPPs, planBCoverer };
+  // Apply manual coverage overrides: any provider manually assigned to cover a team
+  // covers all out members of that team; the provider's own team is unaffected.
+  const manualDay = manualCoverage[key] || {};
+  for (const teamId in manualDay) {
+    const providerName = manualDay[teamId];
+    if (!providerName) continue;
+    const team = teamById(teamId);
+    for (const m of team.members) {
+      if (!teamState[teamId].inMembers.includes(m)) {
+        coverage[m.name] = { label: providerName, type: 'plan-b', teamId };
+      }
+    }
+  }
+
+  return { teamState, coverage, planCNeeded, pulledAPPs, planBCoverer, manualDay };
 }
 
 // ---- Rendering: Day view ----
@@ -1097,7 +1127,7 @@ function renderDayView() {
     return;
   }
 
-  const { teamState, coverage, planCNeeded, pulledAPPs } = computeCoverage(currentDate);
+  const { teamState, coverage, planCNeeded, pulledAPPs, manualDay } = computeCoverage(currentDate);
 
   // Stats
   let countFull = 0, countNoApp = 0, countNoMd = 0, countEmpty = 0;
@@ -1178,6 +1208,38 @@ function renderDayView() {
     document.getElementById('plan-c-container').innerHTML = '';
   }
 
+  // Build sorted in-office roster for manual override dropdowns
+  const inAPPsAllForManual = [], inMDsAllForManual = [];
+  for (const t of TEAMS) {
+    for (const m of t.members) {
+      if (!isPersonIn(m, currentDate)) continue;
+      if (m.role === APP) inAPPsAllForManual.push({ ...m, teamName: t.name });
+      else inMDsAllForManual.push({ ...m, teamName: t.name });
+    }
+  }
+  inAPPsAllForManual.sort((a, b) => a.name.localeCompare(b.name));
+  inMDsAllForManual.sort((a, b) => a.name.localeCompare(b.name));
+
+  function manualDropdownHTML(teamId) {
+    const current = (manualDay && manualDay[teamId]) || '';
+    const appOpts = inAPPsAllForManual.map(p =>
+      `<option value="${p.name}" ${current === p.name ? 'selected' : ''}>${p.name} (${p.teamName})</option>`
+    ).join('');
+    const mdOpts = inMDsAllForManual.map(p =>
+      `<option value="${p.name}" ${current === p.name ? 'selected' : ''}>${p.name} (${p.teamName})</option>`
+    ).join('');
+    return `
+      <div style="padding:6px 14px 8px;border-top:1px solid var(--line-soft);">
+        <label style="font-size:0.68rem;color:var(--ink-mute);display:block;margin-bottom:3px;">Manual assign</label>
+        <select style="font-size:0.75rem;width:100%;border:1px solid var(--line-soft);border-radius:4px;padding:3px 6px;background:var(--surface);color:var(--ink);" onchange="setManualCoverage('${teamId}', this.value)">
+          <option value="">— none —</option>
+          <optgroup label="APPs">${appOpts}</optgroup>
+          <optgroup label="Physicians">${mdOpts}</optgroup>
+        </select>
+      </div>
+    `;
+  }
+
   // Team grid
   const grid = document.getElementById('team-grid');
   grid.innerHTML = '';
@@ -1233,6 +1295,7 @@ function renderDayView() {
         }).join('')}
       </div>
       ${state.status !== 'empty' ? `<div style="padding:8px 14px;font-size:0.72rem;color:var(--ink-mute);border-top:1px solid var(--line-soft);">Buddy: ${buddies}</div>` : `<div style="padding:8px 14px;font-size:0.72rem;color:var(--plan-b);border-top:1px solid var(--line-soft);font-weight:500;">Plan B: ${buddies}</div>`}
+      ${manualDropdownHTML(team.id)}
     `;
     grid.appendChild(card);
   }
@@ -1389,6 +1452,19 @@ function setSupervisorChoice(personName, chosenName) {
     if (Object.keys(supervisorSelections[key]).length === 0) delete supervisorSelections[key];
   }
   saveSupervisorSelections();
+  render();
+}
+
+function setManualCoverage(teamId, providerName) {
+  const key = dateKey(currentDate);
+  if (!manualCoverage[key]) manualCoverage[key] = {};
+  if (providerName) {
+    manualCoverage[key][teamId] = providerName;
+  } else {
+    delete manualCoverage[key][teamId];
+    if (Object.keys(manualCoverage[key]).length === 0) delete manualCoverage[key];
+  }
+  saveManualCoverage();
   render();
 }
 
