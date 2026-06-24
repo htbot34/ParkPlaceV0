@@ -667,6 +667,10 @@
   </div>
 </div>
 
+<!-- Firebase (compat SDK) for cross-device sync -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
 <script>
 const PHYS = 'MD';
 const APP = 'APP';
@@ -750,6 +754,7 @@ function saveAbsences() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(scheduledAbsences));
   } catch (e) {}
+  pushToCloud();
 }
 let supervisorSelections = {};  // { dateKey: { teamId: personName } }
 function loadSupervisorSelections() {
@@ -762,6 +767,7 @@ function saveSupervisorSelections() {
   try {
     localStorage.setItem(SUPERVISOR_KEY, JSON.stringify(supervisorSelections));
   } catch (e) {}
+  pushToCloud();
 }
 
 const MANUAL_COVERAGE_KEY = 'parkplace_manual_coverage_v2';
@@ -776,11 +782,89 @@ function saveManualCoverage() {
   try {
     localStorage.setItem(MANUAL_COVERAGE_KEY, JSON.stringify(manualCoverage));
   } catch (e) {}
+  pushToCloud();
+}
+
+// attendanceByDate (the in/out toggle) — now persisted + synced
+const ATTENDANCE_KEY = 'parkplace_attendance_v1';
+function loadAttendance() {
+  try {
+    const raw = localStorage.getItem(ATTENDANCE_KEY);
+    if (raw) attendanceByDate = JSON.parse(raw);
+  } catch (e) { attendanceByDate = {}; }
+}
+function saveAttendance() {
+  try {
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendanceByDate));
+  } catch (e) {}
+  pushToCloud();
+}
+
+// ---- Cloud sync (Firebase Firestore) ----
+// All shared state lives in one document so every browser sees the same plan.
+// localStorage above remains an offline-first fallback.
+const firebaseConfig = {
+  apiKey: "AIzaSyCrUWPVZP3bPP41tqk8H9jOUHRvBmRA8ts",
+  authDomain: "parkplace-2dfc3.firebaseapp.com",
+  projectId: "parkplace-2dfc3",
+  storageBucket: "parkplace-2dfc3.firebasestorage.app",
+  messagingSenderId: "945004667185",
+  appId: "1:945004667185:web:2498ffec29c878e7ac1010"
+};
+let db = null;
+let applyingRemote = false;  // guard so remote updates don't echo back to the cloud
+let cloudWriteTimer = null;
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+  }
+} catch (e) { db = null; }
+
+function cloudDoc() { return db.collection('parkplace').doc('shared'); }
+
+// Debounced write of the full shared state.
+function pushToCloud() {
+  if (!db || applyingRemote) return;
+  clearTimeout(cloudWriteTimer);
+  cloudWriteTimer = setTimeout(() => {
+    cloudDoc().set({
+      scheduledAbsences,
+      supervisorSelections,
+      manualCoverage,
+      attendanceByDate,
+      updatedAt: Date.now(),
+    }).catch(() => {});  // offline → localStorage keeps us going
+  }, 250);
+}
+
+// Listen for changes from any device and re-render.
+function startCloudSync() {
+  if (!db) return;
+  cloudDoc().onSnapshot(snap => {
+    if (!snap.exists) { pushToCloud(); return; }  // first run: seed from local
+    const data = snap.data() || {};
+    applyingRemote = true;
+    try {
+      if (data.scheduledAbsences)     scheduledAbsences     = data.scheduledAbsences;
+      if (data.supervisorSelections)  supervisorSelections  = data.supervisorSelections;
+      if (data.manualCoverage)        manualCoverage        = data.manualCoverage;
+      if (data.attendanceByDate)      attendanceByDate      = data.attendanceByDate;
+      // keep the offline fallback copies fresh
+      saveAbsences();
+      saveSupervisorSelections();
+      saveManualCoverage();
+      saveAttendance();
+    } finally { applyingRemote = false; }
+    render();
+    updateAbsenceCount();
+  }, () => { /* offline / blocked — localStorage data remains in use */ });
 }
 
 loadAbsences();
 loadSupervisorSelections();
 loadManualCoverage();
+loadAttendance();
 
 // ---- Helpers ----
 function dateKey(d) {
@@ -838,6 +922,7 @@ function toggleAttendance(personName, date) {
   const member = team.members.find(m => m.name === personName);
   const currentlyIn = isPersonIn(member, date);
   attendanceByDate[key][personName] = !currentlyIn;
+  saveAttendance();
   render();
 }
 
@@ -1505,6 +1590,7 @@ function resetCurrent() {
       delete attendanceByDate[dateKey(d)];
     }
   }
+  saveAttendance();
   render();
 }
 function render() {
@@ -1521,6 +1607,7 @@ document.getElementById('date-input').addEventListener('change', e => {
 
 updateAbsenceCount();
 render();
+startCloudSync();
 </script>
 
 </body>
