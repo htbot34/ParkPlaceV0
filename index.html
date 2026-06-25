@@ -651,6 +651,23 @@
   }
   .wk-status.review   { color: #d97706; }
   .wk-status.approved { color: #16a34a; }
+  .wk-status .wk-note { color: #2563eb; }
+
+  /* ---- Per-day shared notes ---- */
+  .notes-wrap { margin: 18px 0 8px; }
+  .notes-wrap label {
+    display: block; font-size: 0.78rem; font-weight: 600;
+    color: var(--ink, #374151); margin-bottom: 5px;
+  }
+  .notes-wrap .notes-hint { font-weight: 400; color: var(--ink-mute, #9ca3af); }
+  .notes-wrap textarea {
+    width: 100%; box-sizing: border-box; min-height: 70px; resize: vertical;
+    padding: 9px 11px; font-size: 0.85rem; line-height: 1.45;
+    font-family: 'Inter', system-ui, sans-serif;
+    border: 1px solid var(--line-soft, #d6dbe0); border-radius: 8px;
+    background: #fffdf5;
+  }
+  .notes-wrap textarea:focus { outline: none; border-color: #2563eb; background: #fff; }
 </style>
 </head>
 <body>
@@ -697,6 +714,10 @@
   <div id="review-status" class="review-bar"></div>
   <div id="plan-c-container"></div>
   <div class="team-grid" id="team-grid"></div>
+  <div id="day-notes-wrap" class="notes-wrap">
+    <label for="day-notes">Notes for this day <span class="notes-hint">— shared, visible to everyone</span></label>
+    <textarea id="day-notes" placeholder="Add any notes about this day's coverage…" oninput="onDayNotesInput(this.value)"></textarea>
+  </div>
 </div>
 
 <div id="week-view" style="display:none;">
@@ -911,6 +932,22 @@ function saveReviewStatus() {
   pushToCloud();
 }
 
+// Per-day shared free-text notes: dayNotes[dateKey] = string
+const NOTES_KEY = 'parkplace_notes_v1';
+let dayNotes = {};
+function loadDayNotes() {
+  try {
+    const raw = localStorage.getItem(NOTES_KEY);
+    if (raw) dayNotes = JSON.parse(raw);
+  } catch (e) { dayNotes = {}; }
+}
+function saveDayNotes() {
+  try {
+    localStorage.setItem(NOTES_KEY, JSON.stringify(dayNotes));
+  } catch (e) {}
+  pushToCloud();
+}
+
 // ---- Cloud sync (Firebase Firestore) ----
 // All shared state lives in one document so every browser sees the same plan.
 // localStorage above remains an offline-first fallback.
@@ -949,6 +986,7 @@ function pushToCloud() {
       manualCoverage,
       attendanceByDate,
       reviewStatus,
+      dayNotes,
       updatedAt: Date.now(),
       updatedBy: currentUserName || 'Unknown',
     }).catch(() => {});  // offline → localStorage keeps us going
@@ -985,12 +1023,14 @@ function startCloudSync() {
       if (data.manualCoverage)        manualCoverage        = data.manualCoverage;
       if (data.attendanceByDate)      attendanceByDate      = data.attendanceByDate;
       if (data.reviewStatus)          reviewStatus          = data.reviewStatus;
+      if (data.dayNotes)              dayNotes              = data.dayNotes;
       // keep the offline fallback copies fresh
       saveAbsences();
       saveSupervisorSelections();
       saveManualCoverage();
       saveAttendance();
       saveReviewStatus();
+      saveDayNotes();
     } finally { applyingRemote = false; }
     render();
     updateAbsenceCount();
@@ -1003,6 +1043,7 @@ loadSupervisorSelections();
 loadManualCoverage();
 loadAttendance();
 loadReviewStatus();
+loadDayNotes();
 
 // ---- Identity + login gate ----
 const PASSWORD_HASH = '70d67c4325b0ae82c284428c4eb7995b0a5aa3e08cda70d0c7b1f50e7bf6cf58';
@@ -1111,6 +1152,26 @@ function renderReviewStatus() {
     actions = `<button class="primary" onclick="submitForReview()">Submit for review</button>`;
   }
   el.innerHTML = `${badge}${meta}<span class="review-actions">${actions}</span>`;
+}
+
+// ---- Per-day shared notes ----
+let notesSaveTimer = null;
+function onDayNotesInput(value) {
+  const key = dateKey(currentDate);
+  if (value && value.trim() !== '') dayNotes[key] = value;
+  else delete dayNotes[key];
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(saveDayNotes, 400);  // debounce while typing
+}
+function renderDayNotes() {
+  const wrap = document.getElementById('day-notes-wrap');
+  const ta = document.getElementById('day-notes');
+  if (!wrap || !ta) return;
+  if (dayOfWeekIndex(currentDate) < 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  // Don't overwrite what the user is actively typing
+  if (document.activeElement === ta) return;
+  ta.value = dayNotes[dateKey(currentDate)] || '';
 }
 
 // ---- Helpers ----
@@ -1455,6 +1516,7 @@ function renderDayView() {
   document.getElementById('banner-title').textContent = `Coverage — ${dateLabel}`;
   document.getElementById('date-input').value = dateKey(currentDate);
   renderReviewStatus();
+  renderDayNotes();
 
   if (di < 0) {
     document.getElementById('team-grid').innerHTML = '<div class="empty-state" style="grid-column:1/-1;">Weekend — clinic closed.</div>';
@@ -1646,11 +1708,15 @@ function renderWeekView() {
   for (let i = 0; i < 5; i++) {
     const badge = document.getElementById('wk-status-' + i);
     if (!badge) continue;
-    const r = reviewStatus[dateKey(days[i])];
+    const dk = dateKey(days[i]);
+    const r = reviewStatus[dk];
     const state = (r && r.state) ? r.state : 'draft';
-    if (state === 'approved') { badge.className = 'wk-status approved'; badge.textContent = '✓ Approved'; }
-    else if (state === 'review') { badge.className = 'wk-status review'; badge.textContent = '⊙ In review'; }
-    else { badge.className = 'wk-status'; badge.textContent = ''; }
+    let cls = 'wk-status', txt = '';
+    if (state === 'approved') { cls = 'wk-status approved'; txt = '✓ Approved'; }
+    else if (state === 'review') { cls = 'wk-status review'; txt = '⊙ In review'; }
+    const hasNote = !!(dayNotes[dk] && dayNotes[dk].trim());
+    badge.className = cls;
+    badge.innerHTML = txt + (hasNote ? ` <span class="wk-note" title="Has notes">📝</span>` : '');
   }
 
   // For each team, render a row across the 5 days
