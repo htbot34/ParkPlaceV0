@@ -644,6 +644,15 @@
   .review-bar button.approve:hover { background: #15803d; }
   .review-bar a.review-reset { color: #6b7280; font-size: 0.74rem; cursor: pointer; align-self: center; }
   .review-bar a.review-reset:hover { text-decoration: underline; }
+  .review-changes {
+    flex-basis: 100%; margin-top: 8px; padding-top: 8px;
+    border-top: 1px dashed var(--line-soft, #d1d5db);
+    font-size: 0.78rem; color: #374151;
+  }
+  .review-changes b { font-weight: 600; }
+  .review-changes ul { margin: 5px 0 0; padding-left: 18px; }
+  .review-changes li { margin: 2px 0; }
+  .review-changes.review-nochange { color: var(--ink-mute, #6b7280); font-style: italic; }
   /* Week-view per-day status badge */
   .wk-status {
     display: block; margin-top: 3px; font-size: 0.6rem; font-weight: 700;
@@ -1098,6 +1107,44 @@ function fmtReviewTime(ts) {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   });
 }
+// Snapshot the tracked, per-day editable state so we can diff it at approval.
+function captureDaySnapshot(date) {
+  const key = dateKey(date);
+  const inOut = {};
+  for (const t of TEAMS) for (const m of t.members) inOut[m.name] = isPersonIn(m, date);
+  return {
+    inOut,
+    manual: JSON.parse(JSON.stringify(manualCoverage[key] || {})),
+    supervisor: JSON.parse(JSON.stringify(supervisorSelections[key] || {})),
+  };
+}
+// Produce a human-readable list of what changed between two snapshots.
+function diffDaySnapshot(before, after) {
+  const changes = [];
+  if (!before) return changes;
+  for (const name in after.inOut) {
+    if (before.inOut[name] !== after.inOut[name]) {
+      changes.push(`${name} — marked ${after.inOut[name] ? 'in' : 'out'} (was ${before.inOut[name] ? 'in' : 'out'})`);
+    }
+  }
+  const manualNames = new Set([...Object.keys(before.manual), ...Object.keys(after.manual)]);
+  for (const name of manualNames) {
+    const b = before.manual[name] || '', a = after.manual[name] || '';
+    if (b === a) continue;
+    if (!b) changes.push(`${name} — "Covered by" set to ${a}`);
+    else if (!a) changes.push(`${name} — "Covered by" cleared (was ${b})`);
+    else changes.push(`${name} — "Covered by" changed to ${a} (was ${b})`);
+  }
+  const supNames = new Set([...Object.keys(before.supervisor), ...Object.keys(after.supervisor)]);
+  for (const name of supNames) {
+    const b = before.supervisor[name] || '', a = after.supervisor[name] || '';
+    if (b === a) continue;
+    if (!b) changes.push(`${name} — supervisor coverer set to ${a}`);
+    else if (!a) changes.push(`${name} — supervisor coverer cleared (was ${b})`);
+    else changes.push(`${name} — supervisor coverer changed to ${a} (was ${b})`);
+  }
+  return changes;
+}
 function submitForReview() {
   const key = dateKey(currentDate);
   reviewStatus[key] = {
@@ -1106,6 +1153,8 @@ function submitForReview() {
     submittedAt: Date.now(),
     approvedBy: null,
     approvedAt: null,
+    snapshot: captureDaySnapshot(currentDate),
+    changes: null,
   };
   saveReviewStatus();
   render();
@@ -1116,6 +1165,7 @@ function approveDay() {
   r.state = 'approved';
   r.approvedBy = currentUserName || 'Unknown';
   r.approvedAt = Date.now();
+  r.changes = diffDaySnapshot(r.snapshot, captureDaySnapshot(currentDate));
   reviewStatus[key] = r;
   saveReviewStatus();
   render();
@@ -1134,7 +1184,7 @@ function renderReviewStatus() {
   const r = reviewStatus[dateKey(currentDate)];
   const state = (r && r.state) ? r.state : 'draft';
   el.className = `review-bar state-${state}`;
-  let badge, meta, actions;
+  let badge, meta, actions, extra = '';
   if (state === 'review') {
     badge = `<span class="review-badge">Ready for review</span>`;
     meta = `<span class="review-meta">Submitted by <b>${r.submittedBy}</b> · ${fmtReviewTime(r.submittedAt)}</span>`;
@@ -1146,12 +1196,18 @@ function renderReviewStatus() {
     meta = `<span class="review-meta">Approved by <b>${r.approvedBy}</b> · ${fmtReviewTime(r.approvedAt)}${subPart}</span>`;
     actions = `<button onclick="submitForReview()">Re-submit for review</button>
                <a class="review-reset" onclick="resetReview()">Reset</a>`;
+    if (r.changes && r.changes.length) {
+      extra = `<div class="review-changes"><b>Changes made during review:</b>
+                 <ul>${r.changes.map(c => `<li>${c}</li>`).join('')}</ul></div>`;
+    } else if (r.changes) {
+      extra = `<div class="review-changes review-nochange">No tracked changes during review.</div>`;
+    }
   } else {
     badge = `<span class="review-badge">Draft</span>`;
     meta = `<span class="review-meta">Not yet submitted for review.</span>`;
     actions = `<button class="primary" onclick="submitForReview()">Submit for review</button>`;
   }
-  el.innerHTML = `${badge}${meta}<span class="review-actions">${actions}</span>`;
+  el.innerHTML = `${badge}${meta}<span class="review-actions">${actions}</span>${extra}`;
 }
 
 // ---- Per-day shared notes ----
