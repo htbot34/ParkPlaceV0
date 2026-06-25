@@ -577,9 +577,54 @@
     .weekly-table th, .weekly-table td { padding: 6px 8px; }
     .weekly-table tr { page-break-inside: avoid; }
   }
+
+  /* ---- Login gate + edit tracking ---- */
+  #login-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: var(--surface, #f4f5f7);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #login-overlay .login-card {
+    background: #fff; border: 1px solid var(--line-soft, #dadce0);
+    border-radius: 10px; padding: 28px 26px; width: 320px; max-width: 90vw;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12); text-align: center;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  #login-overlay h2 { margin: 0 0 4px; font-size: 1.15rem; color: #1f2937; }
+  #login-overlay p.sub { margin: 0 0 18px; font-size: 0.8rem; color: #6b7280; }
+  #login-overlay input {
+    width: 100%; box-sizing: border-box; margin-bottom: 10px;
+    padding: 9px 11px; font-size: 0.9rem;
+    border: 1px solid var(--line-soft, #cbd2d9); border-radius: 6px;
+  }
+  #login-overlay button {
+    width: 100%; padding: 9px; font-size: 0.9rem; font-weight: 600;
+    color: #fff; background: #2563eb; border: none; border-radius: 6px;
+    cursor: pointer;
+  }
+  #login-overlay button:hover { background: #1d4ed8; }
+  #login-error { color: #dc2626; font-size: 0.78rem; min-height: 16px; margin: 2px 0 8px; }
+  #last-edited {
+    font-size: 0.72rem; color: var(--ink-mute, #6b7280);
+    margin-left: auto; display: flex; align-items: center; gap: 10px;
+    white-space: nowrap;
+  }
+  #last-edited a { color: #2563eb; text-decoration: none; cursor: pointer; }
+  #last-edited a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
+
+<div id="login-overlay">
+  <div class="login-card">
+    <h2>Park Place Coverage</h2>
+    <p class="sub">Sign in to view and edit the shared schedule</p>
+    <input type="text" id="login-name" placeholder="Your name" autocomplete="name" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
+    <input type="password" id="login-password" placeholder="Team password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptLogin()">
+    <div id="login-error"></div>
+    <button onclick="attemptLogin()">Sign in</button>
+  </div>
+</div>
 
 <div class="top-bar">
   <div class="brand">Park Place IM — Coverage Planner</div>
@@ -600,6 +645,7 @@
   </div>
   <button class="reset-btn" onclick="resetCurrent()">Reset</button>
   <button class="export-btn" id="export-btn" onclick="exportPDF()" style="display:none;">Export PDF</button>
+  <span id="last-edited"></span>
 </div>
 
 <div id="day-view">
@@ -670,6 +716,7 @@
 <!-- Firebase (compat SDK) for cross-device sync -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
 <script>
 const PHYS = 'MD';
@@ -818,12 +865,16 @@ try {
   if (typeof firebase !== 'undefined') {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    // Best-effort anonymous sign-in so the database rules can require auth.
+    // If Anonymous sign-in isn't enabled yet, this fails quietly and the app
+    // still works under the current (open) rules.
+    if (firebase.auth) firebase.auth().signInAnonymously().catch(() => {});
   }
 } catch (e) { db = null; }
 
 function cloudDoc() { return db.collection('parkplace').doc('shared'); }
 
-// Debounced write of the full shared state.
+// Debounced write of the full shared state, stamped with who made the edit.
 function pushToCloud() {
   if (!db || applyingRemote) return;
   clearTimeout(cloudWriteTimer);
@@ -834,8 +885,26 @@ function pushToCloud() {
       manualCoverage,
       attendanceByDate,
       updatedAt: Date.now(),
+      updatedBy: currentUserName || 'Unknown',
     }).catch(() => {});  // offline → localStorage keeps us going
   }, 250);
+}
+
+// Show "Last edited by [name] at [time]" from the cloud document.
+function renderLastEdited(data) {
+  const el = document.getElementById('last-edited');
+  if (!el) return;
+  let info = '';
+  if (data && data.updatedBy && data.updatedAt) {
+    const when = new Date(data.updatedAt).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    info = `Last edited by ${data.updatedBy} · ${when}`;
+  }
+  const who = currentUserName
+    ? `<a onclick="signOut()" title="Sign out">${currentUserName} ▾</a>`
+    : '';
+  el.innerHTML = `${info ? `<span>${info}</span>` : ''}${who}`;
 }
 
 // Listen for changes from any device and re-render.
@@ -858,6 +927,7 @@ function startCloudSync() {
     } finally { applyingRemote = false; }
     render();
     updateAbsenceCount();
+    renderLastEdited(data);
   }, () => { /* offline / blocked — localStorage data remains in use */ });
 }
 
@@ -865,6 +935,52 @@ loadAbsences();
 loadSupervisorSelections();
 loadManualCoverage();
 loadAttendance();
+
+// ---- Identity + login gate ----
+const PASSWORD_HASH = '70d67c4325b0ae82c284428c4eb7995b0a5aa3e08cda70d0c7b1f50e7bf6cf58';
+const USER_KEY = 'parkplace_user';
+const AUTH_KEY = 'parkplace_authed';
+let currentUserName = localStorage.getItem(USER_KEY) || '';
+
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function showLogin(show) {
+  const ov = document.getElementById('login-overlay');
+  if (ov) ov.style.display = show ? 'flex' : 'none';
+}
+
+async function attemptLogin() {
+  const name = (document.getElementById('login-name').value || '').trim();
+  const pw = document.getElementById('login-password').value || '';
+  const err = document.getElementById('login-error');
+  if (!name) { err.textContent = 'Please enter your name.'; return; }
+  if (await sha256Hex(pw) !== PASSWORD_HASH) { err.textContent = 'Incorrect password.'; return; }
+  currentUserName = name;
+  localStorage.setItem(USER_KEY, name);
+  localStorage.setItem(AUTH_KEY, '1');
+  err.textContent = '';
+  showLogin(false);
+  renderLastEdited(null);
+}
+
+function signOut() {
+  localStorage.removeItem(AUTH_KEY);
+  location.reload();
+}
+
+function checkAuth() {
+  if (localStorage.getItem(AUTH_KEY) === '1' && currentUserName) {
+    showLogin(false);
+  } else {
+    const n = document.getElementById('login-name');
+    if (n && currentUserName) n.value = currentUserName;
+    showLogin(true);
+  }
+  renderLastEdited(null);
+}
 
 // ---- Helpers ----
 function dateKey(d) {
@@ -1608,6 +1724,7 @@ document.getElementById('date-input').addEventListener('change', e => {
 updateAbsenceCount();
 render();
 startCloudSync();
+checkAuth();
 </script>
 
 </body>
