@@ -611,6 +611,46 @@
   }
   #last-edited a { color: #2563eb; text-decoration: none; cursor: pointer; }
   #last-edited a:hover { text-decoration: underline; }
+
+  /* ---- Per-day review / approval ---- */
+  .review-bar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+    margin: 0 0 14px; padding: 10px 14px;
+    border: 1px solid var(--line-soft, #e2e6ea); border-left-width: 4px;
+    border-radius: 8px; background: #fff; font-size: 0.82rem;
+  }
+  .review-bar.state-draft    { border-left-color: #9ca3af; }
+  .review-bar.state-review   { border-left-color: #d97706; background: #fffbeb; }
+  .review-bar.state-approved { border-left-color: #16a34a; background: #f0fdf4; }
+  .review-bar .review-badge {
+    font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    font-size: 0.68rem; padding: 3px 8px; border-radius: 999px; color: #fff;
+  }
+  .review-bar.state-draft    .review-badge { background: #9ca3af; }
+  .review-bar.state-review   .review-badge { background: #d97706; }
+  .review-bar.state-approved .review-badge { background: #16a34a; }
+  .review-bar .review-meta { color: var(--ink-mute, #6b7280); font-size: 0.76rem; }
+  .review-bar .review-meta b { color: #374151; font-weight: 600; }
+  .review-bar .review-actions { margin-left: auto; display: flex; gap: 8px; }
+  .review-bar button {
+    font-size: 0.78rem; font-weight: 600; padding: 6px 12px;
+    border: 1px solid var(--line-soft, #cbd2d9); border-radius: 6px;
+    background: #fff; cursor: pointer; color: #374151;
+  }
+  .review-bar button:hover { background: #f3f4f6; }
+  .review-bar button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .review-bar button.primary:hover { background: #1d4ed8; }
+  .review-bar button.approve { background: #16a34a; border-color: #16a34a; color: #fff; }
+  .review-bar button.approve:hover { background: #15803d; }
+  .review-bar a.review-reset { color: #6b7280; font-size: 0.74rem; cursor: pointer; align-self: center; }
+  .review-bar a.review-reset:hover { text-decoration: underline; }
+  /* Week-view per-day status badge */
+  .wk-status {
+    display: block; margin-top: 3px; font-size: 0.6rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .03em;
+  }
+  .wk-status.review   { color: #d97706; }
+  .wk-status.approved { color: #16a34a; }
 </style>
 </head>
 <body>
@@ -654,6 +694,7 @@
     <div class="banner-subtitle">Plan A: within team · Plan B: buddy team APP · Plan C: nursing supervisor</div>
     <div class="banner-stats" id="banner-stats"></div>
   </div>
+  <div id="review-status" class="review-bar"></div>
   <div id="plan-c-container"></div>
   <div class="team-grid" id="team-grid"></div>
 </div>
@@ -667,7 +708,12 @@
     <table class="weekly-table">
       <thead>
         <tr>
-          <th>Team</th><th>Monday</th><th>Tuesday</th><th>Wednesday</th><th>Thursday</th><th>Friday</th>
+          <th>Team</th>
+          <th>Monday<span class="wk-status" id="wk-status-0"></span></th>
+          <th>Tuesday<span class="wk-status" id="wk-status-1"></span></th>
+          <th>Wednesday<span class="wk-status" id="wk-status-2"></span></th>
+          <th>Thursday<span class="wk-status" id="wk-status-3"></span></th>
+          <th>Friday<span class="wk-status" id="wk-status-4"></span></th>
         </tr>
       </thead>
       <tbody id="weekly-tbody"></tbody>
@@ -847,6 +893,24 @@ function saveAttendance() {
   pushToCloud();
 }
 
+// Per-day review/approval status
+//   reviewStatus[dateKey] = { state, submittedBy, submittedAt, approvedBy, approvedAt }
+//   state: 'review' | 'approved' (absent = draft)
+const REVIEW_KEY = 'parkplace_review_v1';
+let reviewStatus = {};
+function loadReviewStatus() {
+  try {
+    const raw = localStorage.getItem(REVIEW_KEY);
+    if (raw) reviewStatus = JSON.parse(raw);
+  } catch (e) { reviewStatus = {}; }
+}
+function saveReviewStatus() {
+  try {
+    localStorage.setItem(REVIEW_KEY, JSON.stringify(reviewStatus));
+  } catch (e) {}
+  pushToCloud();
+}
+
 // ---- Cloud sync (Firebase Firestore) ----
 // All shared state lives in one document so every browser sees the same plan.
 // localStorage above remains an offline-first fallback.
@@ -884,6 +948,7 @@ function pushToCloud() {
       supervisorSelections,
       manualCoverage,
       attendanceByDate,
+      reviewStatus,
       updatedAt: Date.now(),
       updatedBy: currentUserName || 'Unknown',
     }).catch(() => {});  // offline → localStorage keeps us going
@@ -919,11 +984,13 @@ function startCloudSync() {
       if (data.supervisorSelections)  supervisorSelections  = data.supervisorSelections;
       if (data.manualCoverage)        manualCoverage        = data.manualCoverage;
       if (data.attendanceByDate)      attendanceByDate      = data.attendanceByDate;
+      if (data.reviewStatus)          reviewStatus          = data.reviewStatus;
       // keep the offline fallback copies fresh
       saveAbsences();
       saveSupervisorSelections();
       saveManualCoverage();
       saveAttendance();
+      saveReviewStatus();
     } finally { applyingRemote = false; }
     render();
     updateAbsenceCount();
@@ -935,6 +1002,7 @@ loadAbsences();
 loadSupervisorSelections();
 loadManualCoverage();
 loadAttendance();
+loadReviewStatus();
 
 // ---- Identity + login gate ----
 const PASSWORD_HASH = '70d67c4325b0ae82c284428c4eb7995b0a5aa3e08cda70d0c7b1f50e7bf6cf58';
@@ -980,6 +1048,69 @@ function checkAuth() {
     showLogin(true);
   }
   renderLastEdited(null);
+}
+
+// ---- Per-day review / approval ----
+function fmtReviewTime(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+}
+function submitForReview() {
+  const key = dateKey(currentDate);
+  reviewStatus[key] = {
+    state: 'review',
+    submittedBy: currentUserName || 'Unknown',
+    submittedAt: Date.now(),
+    approvedBy: null,
+    approvedAt: null,
+  };
+  saveReviewStatus();
+  render();
+}
+function approveDay() {
+  const key = dateKey(currentDate);
+  const r = reviewStatus[key] || {};
+  r.state = 'approved';
+  r.approvedBy = currentUserName || 'Unknown';
+  r.approvedAt = Date.now();
+  reviewStatus[key] = r;
+  saveReviewStatus();
+  render();
+}
+function resetReview() {
+  const key = dateKey(currentDate);
+  delete reviewStatus[key];
+  saveReviewStatus();
+  render();
+}
+function renderReviewStatus() {
+  const el = document.getElementById('review-status');
+  if (!el) return;
+  if (dayOfWeekIndex(currentDate) < 0) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const r = reviewStatus[dateKey(currentDate)];
+  const state = (r && r.state) ? r.state : 'draft';
+  el.className = `review-bar state-${state}`;
+  let badge, meta, actions;
+  if (state === 'review') {
+    badge = `<span class="review-badge">Ready for review</span>`;
+    meta = `<span class="review-meta">Submitted by <b>${r.submittedBy}</b> · ${fmtReviewTime(r.submittedAt)}</span>`;
+    actions = `<button class="approve" onclick="approveDay()">Approve</button>
+               <a class="review-reset" onclick="resetReview()">Reset</a>`;
+  } else if (state === 'approved') {
+    const subPart = r.submittedAt ? ` &nbsp;·&nbsp; Submitted by <b>${r.submittedBy}</b> · ${fmtReviewTime(r.submittedAt)}` : '';
+    badge = `<span class="review-badge">Approved</span>`;
+    meta = `<span class="review-meta">Approved by <b>${r.approvedBy}</b> · ${fmtReviewTime(r.approvedAt)}${subPart}</span>`;
+    actions = `<button onclick="submitForReview()">Re-submit for review</button>
+               <a class="review-reset" onclick="resetReview()">Reset</a>`;
+  } else {
+    badge = `<span class="review-badge">Draft</span>`;
+    meta = `<span class="review-meta">Not yet submitted for review.</span>`;
+    actions = `<button class="primary" onclick="submitForReview()">Submit for review</button>`;
+  }
+  el.innerHTML = `${badge}${meta}<span class="review-actions">${actions}</span>`;
 }
 
 // ---- Helpers ----
@@ -1323,6 +1454,7 @@ function renderDayView() {
   document.getElementById('date-label').textContent = dateLabel;
   document.getElementById('banner-title').textContent = `Coverage — ${dateLabel}`;
   document.getElementById('date-input').value = dateKey(currentDate);
+  renderReviewStatus();
 
   if (di < 0) {
     document.getElementById('team-grid').innerHTML = '<div class="empty-state" style="grid-column:1/-1;">Weekend — clinic closed.</div>';
@@ -1509,6 +1641,17 @@ function renderWeekView() {
   document.getElementById('date-input').value = dateKey(currentDate);
   const printLabelEl = document.getElementById('print-week-label');
   if (printLabelEl) printLabelEl.textContent = dateLabel;
+
+  // Per-day review status badges in the column headers
+  for (let i = 0; i < 5; i++) {
+    const badge = document.getElementById('wk-status-' + i);
+    if (!badge) continue;
+    const r = reviewStatus[dateKey(days[i])];
+    const state = (r && r.state) ? r.state : 'draft';
+    if (state === 'approved') { badge.className = 'wk-status approved'; badge.textContent = '✓ Approved'; }
+    else if (state === 'review') { badge.className = 'wk-status review'; badge.textContent = '⊙ In review'; }
+    else { badge.className = 'wk-status'; badge.textContent = ''; }
+  }
 
   // For each team, render a row across the 5 days
   const tbody = document.getElementById('weekly-tbody');
