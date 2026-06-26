@@ -662,6 +662,21 @@
   .wk-status.approved { color: #16a34a; }
   .wk-status .wk-note { color: #2563eb; }
 
+  /* ---- Per-day edit log ---- */
+  .editlog { margin: -6px 0 14px; font-size: 0.76rem; }
+  .editlog .editlog-summary { color: var(--ink-mute, #6b7280); cursor: pointer; user-select: none; }
+  .editlog .editlog-summary.muted { cursor: default; }
+  .editlog .editlog-summary b { color: #374151; font-weight: 600; }
+  .editlog .editlog-summary:hover:not(.muted) { color: #2563eb; }
+  .editlog .editlog-caret { font-size: 0.6rem; margin-left: 2px; }
+  .editlog ul.editlog-list {
+    margin: 6px 0 0; padding: 8px 8px 8px 26px; list-style: decimal;
+    background: #f8fafc; border: 1px solid var(--line-soft, #e5e9ed); border-radius: 8px;
+    max-height: 220px; overflow-y: auto;
+  }
+  .editlog ul.editlog-list li { margin: 2px 0; color: #4b5563; }
+  .editlog ul.editlog-list li b { color: #1f2937; }
+
   /* ---- Per-day shared notes ---- */
   .notes-wrap { margin: 18px 0 8px; }
   .notes-wrap label {
@@ -721,6 +736,7 @@
     <div class="banner-stats" id="banner-stats"></div>
   </div>
   <div id="review-status" class="review-bar"></div>
+  <div id="day-editlog" class="editlog"></div>
   <div id="plan-c-container"></div>
   <div class="team-grid" id="team-grid"></div>
   <div id="day-notes-wrap" class="notes-wrap">
@@ -957,6 +973,38 @@ function saveDayNotes() {
   pushToCloud();
 }
 
+// Per-day edit log: editLog[dateKey] = [{ by, at }, ...] (who edited, when)
+const EDITLOG_KEY = 'parkplace_editlog_v1';
+let editLog = {};
+function loadEditLog() {
+  try {
+    const raw = localStorage.getItem(EDITLOG_KEY);
+    if (raw) editLog = JSON.parse(raw);
+  } catch (e) { editLog = {}; }
+}
+function saveEditLog() {
+  try {
+    localStorage.setItem(EDITLOG_KEY, JSON.stringify(editLog));
+  } catch (e) {}
+  pushToCloud();
+}
+// Record an edit on a given day. coalesceMs merges rapid edits by the same
+// person into one entry (used for note typing so it isn't counted per-keystroke).
+function logEdit(key, coalesceMs = 0) {
+  if (!key || applyingRemote) return;
+  if (!editLog[key]) editLog[key] = [];
+  const arr = editLog[key];
+  const now = Date.now();
+  const by = currentUserName || 'Unknown';
+  const last = arr[arr.length - 1];
+  if (coalesceMs && last && last.by === by && (now - last.at) < coalesceMs) {
+    last.at = now;
+  } else {
+    arr.push({ by, at: now });
+  }
+  saveEditLog();
+}
+
 // ---- Cloud sync (Firebase Firestore) ----
 // All shared state lives in one document so every browser sees the same plan.
 // localStorage above remains an offline-first fallback.
@@ -996,6 +1044,7 @@ function pushToCloud() {
       attendanceByDate,
       reviewStatus,
       dayNotes,
+      editLog,
       updatedAt: Date.now(),
       updatedBy: currentUserName || 'Unknown',
     }).catch(() => {});  // offline → localStorage keeps us going
@@ -1033,6 +1082,7 @@ function startCloudSync() {
       if (data.attendanceByDate)      attendanceByDate      = data.attendanceByDate;
       if (data.reviewStatus)          reviewStatus          = data.reviewStatus;
       if (data.dayNotes)              dayNotes              = data.dayNotes;
+      if (data.editLog)               editLog               = data.editLog;
       // keep the offline fallback copies fresh
       saveAbsences();
       saveSupervisorSelections();
@@ -1040,6 +1090,7 @@ function startCloudSync() {
       saveAttendance();
       saveReviewStatus();
       saveDayNotes();
+      saveEditLog();
     } finally { applyingRemote = false; }
     render();
     updateAbsenceCount();
@@ -1053,6 +1104,7 @@ loadManualCoverage();
 loadAttendance();
 loadReviewStatus();
 loadDayNotes();
+loadEditLog();
 
 // ---- Identity + login gate ----
 const PASSWORD_HASH = '70d67c4325b0ae82c284428c4eb7995b0a5aa3e08cda70d0c7b1f50e7bf6cf58';
@@ -1157,6 +1209,7 @@ function submitForReview() {
     changes: null,
   };
   saveReviewStatus();
+  logEdit(key);
   render();
 }
 function approveDay() {
@@ -1168,6 +1221,7 @@ function approveDay() {
   r.changes = diffDaySnapshot(r.snapshot, captureDaySnapshot(currentDate));
   reviewStatus[key] = r;
   saveReviewStatus();
+  logEdit(key);
   render();
 }
 function resetReview() {
@@ -1218,6 +1272,7 @@ function onDayNotesInput(value) {
   else delete dayNotes[key];
   clearTimeout(notesSaveTimer);
   notesSaveTimer = setTimeout(saveDayNotes, 400);  // debounce while typing
+  logEdit(key, 120000);  // coalesce a typing session into one logged edit
 }
 function renderDayNotes() {
   const wrap = document.getElementById('day-notes-wrap');
@@ -1228,6 +1283,30 @@ function renderDayNotes() {
   // Don't overwrite what the user is actively typing
   if (document.activeElement === ta) return;
   ta.value = dayNotes[dateKey(currentDate)] || '';
+}
+
+// ---- Per-day edit log ----
+let editLogExpanded = false;
+function toggleEditLog() { editLogExpanded = !editLogExpanded; renderEditLog(); }
+function renderEditLog() {
+  const el = document.getElementById('day-editlog');
+  if (!el) return;
+  if (dayOfWeekIndex(currentDate) < 0) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const arr = editLog[dateKey(currentDate)] || [];
+  if (arr.length === 0) {
+    el.innerHTML = `<span class="editlog-summary muted">No edits recorded for this day yet.</span>`;
+    return;
+  }
+  const last = arr[arr.length - 1];
+  const caret = editLogExpanded ? '▲' : '▼';
+  const summary = `<span class="editlog-summary" onclick="toggleEditLog()">✎ ${arr.length} edit${arr.length === 1 ? '' : 's'} · last by <b>${last.by}</b> · ${fmtReviewTime(last.at)} <span class="editlog-caret">${caret}</span></span>`;
+  let list = '';
+  if (editLogExpanded) {
+    const rows = arr.map((e, i) => `<li><b>${e.by}</b> · ${fmtReviewTime(e.at)}</li>`).reverse().join('');
+    list = `<ul class="editlog-list">${rows}</ul>`;
+  }
+  el.innerHTML = summary + list;
 }
 
 // ---- Helpers ----
@@ -1287,6 +1366,7 @@ function toggleAttendance(personName, date) {
   const currentlyIn = isPersonIn(member, date);
   attendanceByDate[key][personName] = !currentlyIn;
   saveAttendance();
+  logEdit(key);
   render();
 }
 
@@ -1573,6 +1653,7 @@ function renderDayView() {
   document.getElementById('date-input').value = dateKey(currentDate);
   renderReviewStatus();
   renderDayNotes();
+  renderEditLog();
 
   if (di < 0) {
     document.getElementById('team-grid').innerHTML = '<div class="empty-state" style="grid-column:1/-1;">Weekend — clinic closed.</div>';
@@ -1911,6 +1992,7 @@ function setSupervisorChoice(personName, chosenName) {
     if (Object.keys(supervisorSelections[key]).length === 0) delete supervisorSelections[key];
   }
   saveSupervisorSelections();
+  logEdit(key);
   render();
 }
 
@@ -1924,6 +2006,7 @@ function setManualCoverage(personName, covererName) {
     if (Object.keys(manualCoverage[key]).length === 0) delete manualCoverage[key];
   }
   saveManualCoverage();
+  logEdit(key);
   render();
 }
 
@@ -1974,6 +2057,7 @@ function resetCurrent() {
   saveAttendance();
   saveManualCoverage();
   saveSupervisorSelections();
+  logEdit(key);
   render();
 }
 function render() {
