@@ -611,6 +611,23 @@
   }
   #last-edited a { color: #2563eb; text-decoration: none; cursor: pointer; }
   #last-edited a:hover { text-decoration: underline; }
+  .user-menu { position: relative; }
+  .user-menu-dropdown {
+    display: none; position: absolute; right: 0; top: 100%; margin-top: 6px;
+    background: #fff; border: 1px solid var(--line-soft, #d6dbe0); border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12); padding: 8px; min-width: 150px; z-index: 100;
+  }
+  .user-menu-dropdown.open { display: block; }
+  .user-menu-dropdown .user-menu-label {
+    font-size: 0.72rem; color: var(--ink-mute, #6b7280); padding: 2px 4px 8px;
+    border-bottom: 1px solid var(--line-soft, #eceff1); margin-bottom: 6px; white-space: nowrap;
+  }
+  .user-menu-dropdown .user-menu-label b { color: #374151; }
+  .user-menu-dropdown button {
+    width: 100%; text-align: left; font-size: 0.8rem; padding: 6px 8px;
+    border: none; background: none; border-radius: 5px; cursor: pointer; color: #b91c1c;
+  }
+  .user-menu-dropdown button:hover { background: #fef2f2; }
 
   /* ---- Per-day review / approval ---- */
   .review-bar {
@@ -1063,10 +1080,26 @@ function renderLastEdited(data) {
     info = `Last edited by ${data.updatedBy} · ${when}`;
   }
   const who = currentUserName
-    ? `<a onclick="signOut()" title="Sign out">${currentUserName} ▾</a>`
+    ? `<span class="user-menu">
+         <a onclick="toggleUserMenu(event)" title="Account">${currentUserName} ▾</a>
+         <div id="user-menu-dropdown" class="user-menu-dropdown">
+           <div class="user-menu-label">Signed in as <b>${currentUserName}</b></div>
+           <button onclick="signOut()">Sign out</button>
+         </div>
+       </span>`
     : '';
   el.innerHTML = `${info ? `<span>${info}</span>` : ''}${who}`;
 }
+function toggleUserMenu(e) {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('user-menu-dropdown');
+  if (dd) dd.classList.toggle('open');
+}
+// Close the user menu when clicking anywhere else
+document.addEventListener('click', () => {
+  const dd = document.getElementById('user-menu-dropdown');
+  if (dd) dd.classList.remove('open');
+});
 
 // Listen for changes from any device and re-render.
 function startCloudSync() {
@@ -1137,6 +1170,7 @@ async function attemptLogin() {
 }
 
 function signOut() {
+  if (!confirm('Sign out of ParkPlace on this computer?')) return;
   localStorage.removeItem(AUTH_KEY);
   location.reload();
 }
