@@ -709,7 +709,7 @@
     <button id="view-day-btn" class="active" onclick="setView('day')">Day</button>
     <button id="view-week-btn" onclick="setView('week')">Week</button>
   </div>
-  <button class="reset-btn" onclick="resetCurrent()">Reset</button>
+  <button class="reset-btn" onclick="resetCurrent()" title="Reset this day to its default schedule-based coverage (keeps scheduled time off)">Reset day</button>
   <button class="export-btn" id="export-btn" onclick="exportPDF()" style="display:none;">Export PDF</button>
   <span id="last-edited"></span>
 </div>
@@ -1961,17 +1961,19 @@ function goToToday() {
   render();
 }
 function resetCurrent() {
-  if (currentView === 'day') {
-    delete attendanceByDate[dateKey(currentDate)];
-  } else {
-    const monday = findMondayOf(currentDate);
-    for (let i = 0; i < 5; i++) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      delete attendanceByDate[dateKey(d)];
-    }
-  }
+  // Reset only the single current day back to its default, schedule-based
+  // coverage: clear manual in/out toggles, "Covered by" overrides, and
+  // supervisor designations for that day. Scheduled time off (scheduled
+  // absences) is intentionally preserved.
+  const key = dateKey(currentDate);
+  const dayLabel = currentDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+  if (!confirm(`Reset ${dayLabel} to its default coverage?\n\nThis clears manual in/out changes, "Covered by" overrides, and supervisor picks for this day. Scheduled time off is kept.`)) return;
+  delete attendanceByDate[key];
+  delete manualCoverage[key];
+  delete supervisorSelections[key];
   saveAttendance();
+  saveManualCoverage();
+  saveSupervisorSelections();
   render();
 }
 function render() {
