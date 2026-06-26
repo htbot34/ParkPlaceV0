@@ -526,6 +526,11 @@
   .absence-row .person { font-weight: 500; }
   .absence-row .dates { color: var(--ink-soft); }
   .absence-row .reason { color: var(--ink-mute); font-size: 0.8rem; font-style: italic; }
+  .absence-row .absence-meta {
+    grid-column: 1 / -1; font-size: 0.7rem; color: var(--ink-mute);
+    border-top: 1px dashed var(--line); padding-top: 5px; margin-top: 2px;
+  }
+  .absence-row .absence-meta b { color: var(--ink-soft); font-weight: 600; }
   .remove-btn {
     background: none;
     border: none;
@@ -1962,7 +1967,7 @@ function addAbsence() {
   if (!person) { alert('Pick a person.'); return; }
   if (!start || !end) { alert('Pick start and end dates.'); return; }
   if (start > end) { alert('Start must be on or before end.'); return; }
-  scheduledAbsences.push({ person, start, end, reason });
+  scheduledAbsences.push({ person, start, end, reason, addedBy: currentUserName || 'Unknown', addedAt: Date.now() });
   saveAbsences();
   document.getElementById('abs-person').value = '';
   document.getElementById('abs-reason').value = '';
@@ -1998,12 +2003,18 @@ function renderAbsencesList() {
     const isPast = a.end < today;
     const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
     const range = a.start === a.end ? fmt(a.start) : `${fmt(a.start)} – ${fmt(a.end)}`;
+    const stamp = ts => new Date(ts).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+    let meta = '';
+    if (a.addedBy && a.addedAt) {
+      meta = `<div class="absence-meta">Added by <b>${a.addedBy}</b> · ${stamp(a.addedAt)}</div>`;
+    }
     return `
       <div class="absence-row ${isPast ? 'past' : ''}">
         <div class="person">${a.person}</div>
         <div class="dates">${range}${isPast ? ' (past)' : ''}</div>
         <div class="reason">${a.reason || ''}</div>
         <button class="remove-btn" onclick="removeAbsence(${a.originalIdx})" title="Remove">✕</button>
+        ${meta}
       </div>
     `;
   }).join('');
