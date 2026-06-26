@@ -870,6 +870,10 @@ const TEAMS = [
     { name: 'Tanabe', role: PHYS, schedule: [0,1,1,1,1] },
     { name: 'Meier',  role: PHYS, schedule: [1,0,1,1,1] },
     { name: 'Sorcha', role: APP,  schedule: [1,1,1,0,0] },
+    // Independent member: needs coverage (off Mon/Thu) but covers no one and is
+    // outside the team/buddy logic. Coverage is resolved by resolveIndependentCoverage().
+    { name: 'Jessica Bruce', role: APP, schedule: [0,1,1,0,1], independent: true,
+      coverPriority: ['Sorcha', 'Meier', 'Turcotte', 'Tanabe'] },
   ]},
 ];
 
@@ -1414,8 +1418,11 @@ function toggleAttendance(personName, date) {
 //   coverage[personName] = { label: <display string>, type: <css class hint>, teamId }
 //   type values: 'team' | 'self' | 'self-app' | 'self-md' | 'plan-a' | 'plan-b' | 'plan-c' | 'out'
 function classifyTeam(team, date) {
-  const inMembers = team.members.filter(m => isPersonIn(m, date));
-  const outMembers = team.members.filter(m => !isPersonIn(m, date));
+  // Independent members (e.g. Jessica) sit outside team/buddy coverage logic:
+  // they don't affect team status and are never auto-assigned to cover others.
+  const active = team.members.filter(m => !m.independent);
+  const inMembers = active.filter(m => isPersonIn(m, date));
+  const outMembers = active.filter(m => !isPersonIn(m, date));
   const hasMD = inMembers.some(m => m.role === PHYS);
   const hasAPP = inMembers.some(m => m.role === APP);
   let status;
@@ -1424,6 +1431,27 @@ function classifyTeam(team, date) {
   else if (!hasMD) status = 'no-md';
   else status = 'full';
   return { status, inMembers, outMembers, hasMD, hasAPP };
+}
+
+function findMemberByName(name) {
+  for (const t of TEAMS) { const m = t.members.find(x => x.name === name); if (m) return m; }
+  return null;
+}
+// Resolve coverage for an independent member who is OUT, using their fixed
+// priority list (first available person in the office covers).
+function resolveIndependentCoverage(member, date, teamId) {
+  const di = dayOfWeekIndex(date);
+  const order = member.coverPriority || [];
+  const isAvail = name => { const m = findMemberByName(name); return !!(m && isPersonIn(m, date)); };
+  const avail = order.filter(isAvail);
+  if (avail.length === 0) return { label: 'supervisor', type: 'plan-c', teamId };
+  // Thursday: Meier works mornings only, so when Meier is the cover (Sorcha is
+  // off Thursdays), Meier takes AM and the next available person takes PM.
+  if (di === 3 && avail[0] === 'Meier') {
+    const pm = order.slice(order.indexOf('Meier') + 1).find(isAvail);
+    return { label: `Meier (AM) / ${pm || 'supervisor'} (PM)`, type: 'plan-a', teamId };
+  }
+  return { label: avail[0], type: 'plan-a', teamId };
 }
 
 function computeCoverage(date) {
@@ -1658,6 +1686,21 @@ function computeCoverage(date) {
     }
   }
 
+  // Independent members (e.g. Jessica): custom priority-list coverage, computed
+  // separately from the team/buddy engine. Self when in; otherwise first
+  // available coverer in their priority list, with a Thursday AM/PM split when
+  // Meier (AM-only on Thursdays) is the one covering.
+  for (const team of TEAMS) {
+    for (const m of team.members) {
+      if (!m.independent) continue;
+      if (isPersonIn(m, date)) {
+        coverage[m.name] = { label: m.name, type: 'self', teamId: team.id };
+      } else {
+        coverage[m.name] = resolveIndependentCoverage(m, date, team.id);
+      }
+    }
+  }
+
   // Apply supervisor selections: replace 'supervisor' on a per-person basis
   const daySelections = supervisorSelections[key] || {};
   for (const personName in daySelections) {
@@ -1725,6 +1768,7 @@ function renderDayView() {
     const inAPPsAll = [], inMDsAll = [];
     for (const t of TEAMS) {
       for (const m of t.members) {
+        if (m.independent) continue;  // independent members cover no one
         if (!isPersonIn(m, currentDate)) continue;
         if (m.role === APP) inAPPsAll.push({ ...m, teamName: t.name });
         else inMDsAll.push({ ...m, teamName: t.name });
@@ -1832,7 +1876,7 @@ function renderDayView() {
           const manualCoverer = manualDay[m.name] || '';
           // Build options: all providers from all teams except this person
           const allProviderOpts = TEAMS.map(t =>
-            `<optgroup label="${t.name}">${t.members.map(p =>
+            `<optgroup label="${t.name}">${t.members.filter(p => !p.independent).map(p =>
               `<option value="${p.name}" ${manualCoverer === p.name ? 'selected' : ''}>${p.name}</option>`
             ).join('')}</optgroup>`
           ).join('');
