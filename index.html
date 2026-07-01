@@ -862,13 +862,13 @@ const TEAMS = [
     { name: 'Sophia',   role: APP,  schedule: [1,0,1,1,0] },
   ]},
   { id: 'T6', name: 'Myrtle', cls: 'team-t6', members: [
-    { name: 'Donovan', role: PHYS, schedule: [1,0,1,0,1] },
+    { name: 'Donovan', role: PHYS, schedule: [1,0,1,0,1], amOnlyDays: [4] },
     { name: 'Miltner', role: PHYS, schedule: [1,1,0,1,0] },
     { name: 'Micah',   role: APP,  schedule: [1,1,0,1,1] },
   ]},
   { id: 'T7', name: 'Walnut', cls: 'team-t7', members: [
     { name: 'Tanabe', role: PHYS, schedule: [0,1,1,1,1] },
-    { name: 'Meier',  role: PHYS, schedule: [1,0,1,1,1] },
+    { name: 'Meier',  role: PHYS, schedule: [1,0,1,1,1], amOnlyDays: [3] },
     { name: 'Sorcha', role: APP,  schedule: [1,1,1,0,0] },
     // Independent member: needs coverage (off Mon/Thu) but covers no one and is
     // outside the team/buddy logic. Coverage is resolved by resolveIndependentCoverage().
@@ -1400,6 +1400,14 @@ function isPersonIn(person, date) {
   return person.schedule[di] === 1;
 }
 
+// AM-only providers (e.g. Meier on Thursdays, Donovan on Fridays) are physically
+// present for the morning only — admin work in the afternoon. They are available
+// to cover in the AM but never in the PM.
+function isAmOnly(person, date) {
+  const di = dayOfWeekIndex(date);
+  return di >= 0 && Array.isArray(person.amOnlyDays) && person.amOnlyDays.includes(di) && isPersonIn(person, date);
+}
+
 function toggleAttendance(personName, date) {
   const key = dateKey(date);
   if (!attendanceByDate[key]) attendanceByDate[key] = {};
@@ -1440,16 +1448,16 @@ function findMemberByName(name) {
 // Resolve coverage for an independent member who is OUT, using their fixed
 // priority list (first available person in the office covers).
 function resolveIndependentCoverage(member, date, teamId) {
-  const di = dayOfWeekIndex(date);
   const order = member.coverPriority || [];
   const isAvail = name => { const m = findMemberByName(name); return !!(m && isPersonIn(m, date)); };
   const avail = order.filter(isAvail);
   if (avail.length === 0) return { label: 'supervisor', type: 'plan-c', teamId };
-  // Thursday: Meier works mornings only, so when Meier is the cover (Sorcha is
-  // off Thursdays), Meier takes AM and the next available person takes PM.
-  if (di === 3 && avail[0] === 'Meier') {
-    const pm = order.slice(order.indexOf('Meier') + 1).find(isAvail);
-    return { label: `Meier (AM) / ${pm || 'supervisor'} (PM)`, type: 'plan-a', teamId };
+  // If the lead coverer is AM-only today (e.g. Meier on Thu), they take AM and the
+  // next available person takes PM.
+  const lead = findMemberByName(avail[0]);
+  if (lead && isAmOnly(lead, date)) {
+    const pm = order.slice(order.indexOf(avail[0]) + 1).find(isAvail);
+    return { label: `${avail[0]} (AM) / ${pm || 'supervisor'} (PM)`, type: 'plan-a', teamId };
   }
   return { label: avail[0], type: 'plan-a', teamId };
 }
@@ -1599,6 +1607,13 @@ function computeCoverage(date) {
             coverage[m.name] = { label: m.name, type: 'self', teamId: team.id };
           }
         }
+        // AM-only provider (e.g. Meier on Thu, Donovan on Fri): in the office for
+        // the morning only. Just tag their own line "(AM)". No PM flag is needed
+        // here — when they are the only provider who could hold the team, the PM
+        // gap is surfaced on the out-member lines that would otherwise fall to them.
+        if (isAmOnly(m, date)) {
+          coverage[m.name] = { label: '(AM)', type: 'self', teamId: team.id, amOnly: true };
+        }
       }
     }
 
@@ -1675,8 +1690,13 @@ function computeCoverage(date) {
       }
 
       if (coverers.length > 0) {
+        // A lone AM-only coverer (e.g. Donovan on Fridays) can only cover the AM;
+        // the PM falls to the supervisor.
+        const label = (coverers.length === 1 && isAmOnly(coverers[0], date))
+          ? `${coverers[0].name} (AM) / supervisor (PM)`
+          : coverers.map(c => c.name).join('/');
         coverage[m.name] = {
-          label: coverers.map(c => c.name).join('/'),
+          label,
           type: 'plan-a',
           teamId: team.id,
         };
