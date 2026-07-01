@@ -1691,15 +1691,22 @@ function computeCoverage(date) {
 
       if (coverers.length > 0) {
         // A lone AM-only coverer (e.g. Donovan on Fridays) can only cover the AM;
-        // the PM falls to the supervisor.
-        const label = (coverers.length === 1 && isAmOnly(coverers[0], date))
-          ? `${coverers[0].name} (AM) / supervisor (PM)`
-          : coverers.map(c => c.name).join('/');
-        coverage[m.name] = {
-          label,
-          type: 'plan-a',
-          teamId: team.id,
-        };
+        // the PM still needs a coverer, designated by the supervisor (Plan C panel).
+        if (coverers.length === 1 && isAmOnly(coverers[0], date)) {
+          coverage[m.name] = {
+            label: `${coverers[0].name} (AM) / supervisor (PM)`,
+            type: 'plan-a',
+            teamId: team.id,
+            amCoverer: coverers[0].name,
+            pmSupervisor: true,
+          };
+        } else {
+          coverage[m.name] = {
+            label: coverers.map(c => c.name).join('/'),
+            type: 'plan-a',
+            teamId: team.id,
+          };
+        }
       } else {
         coverage[m.name] = { label: 'supervisor', type: 'plan-c', teamId: team.id };
       }
@@ -1721,16 +1728,32 @@ function computeCoverage(date) {
     }
   }
 
-  // Apply supervisor selections: replace 'supervisor' on a per-person basis
+  // An AM-only provider covering an out teammate leaves an afternoon gap. Surface
+  // that team in the Plan C panel so the supervisor can designate the PM coverer.
+  for (const personName in coverage) {
+    const e = coverage[personName];
+    if (e && e.pmSupervisor && !planCNeeded.includes(e.teamId)) planCNeeded.push(e.teamId);
+  }
+
+  // Apply supervisor selections: fill in the designated coverer on a per-person basis.
   const daySelections = supervisorSelections[key] || {};
   for (const personName in daySelections) {
     const chosenName = daySelections[personName];
     if (!chosenName) continue;
-    if (coverage[personName] && coverage[personName].type === 'plan-c') {
+    const entry = coverage[personName];
+    if (!entry) continue;
+    if (entry.pmSupervisor) {
+      // Keep the AM coverer; slot the supervisor-designated coverer into the PM.
+      coverage[personName] = {
+        label: `${entry.amCoverer} (AM) / ${chosenName} (PM)`,
+        type: 'plan-a',
+        teamId: entry.teamId,
+      };
+    } else if (entry.type === 'plan-c') {
       coverage[personName] = {
         label: `${chosenName} (designated)`,
         type: 'plan-b',
-        teamId: coverage[personName].teamId,
+        teamId: entry.teamId,
       };
     }
   }
@@ -1790,6 +1813,7 @@ function renderDayView() {
       for (const m of t.members) {
         if (m.independent) continue;  // independent members cover no one
         if (!isPersonIn(m, currentDate)) continue;
+        if (isAmOnly(m, currentDate)) continue;  // AM-only providers can't cover the afternoon
         if (m.role === APP) inAPPsAll.push({ ...m, teamName: t.name });
         else inMDsAll.push({ ...m, teamName: t.name });
       }
