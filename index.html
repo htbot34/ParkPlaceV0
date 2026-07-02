@@ -1608,11 +1608,20 @@ function computeCoverage(date) {
           }
         }
         // AM-only provider (e.g. Meier on Thu, Donovan on Fri): in the office for
-        // the morning only. Just tag their own line "(AM)". No PM flag is needed
-        // here — when they are the only provider who could hold the team, the PM
-        // gap is surfaced on the out-member lines that would otherwise fall to them.
+        // the morning only. Always spell out who holds the team in the afternoon:
+        // "<self> (AM) / <PM holder> (PM)" — e.g. "Donovan (AM) / Micah (PM)" or
+        // "Meier (AM) / Tanabe (PM)". If no one else is present, the PM reads
+        // "supervisor" (and the gap is designated via the Plan C panel).
         if (isAmOnly(m, date)) {
-          coverage[m.name] = { label: '(AM)', type: 'self', teamId: team.id, amOnly: true };
+          const pmHolders = state.inMembers.filter(x =>
+            x.name !== m.name && !isAmOnly(x, date));
+          const pm = pmHolders.length ? pmHolders.map(x => x.name).join('/') : 'supervisor';
+          coverage[m.name] = {
+            label: `${m.name} (AM) / ${pm} (PM)`,
+            type: 'self',
+            teamId: team.id,
+            amOnly: true,
+          };
         }
       }
     }
