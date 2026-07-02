@@ -1608,11 +1608,26 @@ function computeCoverage(date) {
           }
         }
         // AM-only provider (e.g. Meier on Thu, Donovan on Fri): in the office for
-        // the morning only. Just tag their own line "(AM)". No PM flag is needed
-        // here — when they are the only provider who could hold the team, the PM
-        // gap is surfaced on the out-member lines that would otherwise fall to them.
+        // the morning only. If another physician is on the team all afternoon
+        // (e.g. Tanabe covers Meier's PM), the team is fine — just tag "(AM)".
+        // Otherwise this provider is the only physician, so spell out who holds
+        // the team in the PM: "<self> (AM) / <PM holder> (PM)".
         if (isAmOnly(m, date)) {
-          coverage[m.name] = { label: '(AM)', type: 'self', teamId: team.id, amOnly: true };
+          const otherPhysInPM = state.inMembers.some(x =>
+            x.name !== m.name && x.role === PHYS && !isAmOnly(x, date));
+          if (otherPhysInPM) {
+            coverage[m.name] = { label: '(AM)', type: 'self', teamId: team.id, amOnly: true };
+          } else {
+            const pmHolders = state.inMembers.filter(x =>
+              x.name !== m.name && !isAmOnly(x, date));
+            const pm = pmHolders.length ? pmHolders.map(x => x.name).join('/') : 'supervisor';
+            coverage[m.name] = {
+              label: `${m.name} (AM) / ${pm} (PM)`,
+              type: 'self',
+              teamId: team.id,
+              amOnly: true,
+            };
+          }
         }
       }
     }
